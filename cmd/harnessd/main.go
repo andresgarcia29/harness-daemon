@@ -322,6 +322,7 @@ func run(port int, wsPath string) int {
 	mux.HandleFunc("/api/op/task", op.OpTask)
 	mux.HandleFunc("/api/op/respond", op.OpRespond)
 	mux.HandleFunc("/api/op/pane-send", op.OpPaneSend)
+	mux.HandleFunc("/api/op/herdr", op.OpHerdr)
 	mux.HandleFunc("/api/op/connect", op.OpConnect)
 	mux.HandleFunc("/api/op/sync-prices", op.OpSyncPrices)
 	mux.HandleFunc("/api/db", func(rw http.ResponseWriter, r *http.Request) {

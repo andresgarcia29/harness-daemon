@@ -168,3 +168,30 @@ func PaneSend(paneID, text string) error {
 	_, err := run(5*time.Second, "pane", "run", paneID, text)
 	return err
 }
+
+// ── Control de ciclo de vida (destructivo — el caller valida el id) ───────
+
+// Interrupt manda Ctrl-C a un pane (send-keys C-c) — corta el proceso sin
+// cerrar la terminal.
+func Interrupt(paneID string) error {
+	_, err := run(5*time.Second, "pane", "send-keys", paneID, "C-c")
+	return err
+}
+
+// ClosePane cierra un pane (mata su terminal).
+func ClosePane(paneID string) error {
+	_, err := run(5*time.Second, "pane", "close", paneID)
+	return err
+}
+
+// CloseTab cierra un tab (y sus panes).
+func CloseTab(tabID string) error {
+	_, err := run(5*time.Second, "tab", "close", tabID)
+	return err
+}
+
+// CloseWorkspace cierra un workspace entero.
+func CloseWorkspace(wsID string) error {
+	_, err := run(5*time.Second, "workspace", "close", wsID)
+	return err
+}
