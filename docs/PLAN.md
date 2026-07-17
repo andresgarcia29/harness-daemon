@@ -86,6 +86,15 @@ Vistas: **el estado grande** (TRABAJANDO / TE ESPERA / BLOQUEADO / LISTO) ·
 pipeline · agentes en paralelo · **Historia** (la narrativa de decisiones) ·
 tokens.
 
+> **Estado 2026-07-17**: el panel Python del plugin (v0.19.0) ya implementa
+> estas vistas Y el plano de operar ([ADR-0010](adr/ADR-0010-el-plano-de-operar.md)):
+> crear tareas que lanzan `claude -p "/auto …"` headless, responder a agentes
+> por `--resume`, conexiones validadas (Linear/OpenRouter) y sync de precios.
+> Esta fase migra ese diseño ya probado a React embebido — no lo re-inventa.
+> El contrato de datos (snapshot JSON + bus JSONL) y las defensas (token
+> anti-CSRF por arranque, Host check, 127.0.0.1) vienen probados por
+> `tests/` del instalador.
+
 ## Fase 6 — Update firmado
 
 Temp → verificar minisign → `--selftest` → `rename()` → reiniciar →
