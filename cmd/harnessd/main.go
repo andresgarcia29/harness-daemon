@@ -20,6 +20,7 @@ import (
 
 	"github.com/andresgarcia29/harness-daemon/internal/api"
 	"github.com/andresgarcia29/harness-daemon/internal/collect"
+	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/lock"
 	"github.com/andresgarcia29/harness-daemon/internal/store"
@@ -296,6 +297,22 @@ func run(port int, wsPath string) int {
 			return
 		}
 		_ = json.NewEncoder(rw).Encode(d)
+	})
+	// herdr (OPCIONAL): el estado vivo de las terminales de agentes. Si herdr no
+	// está o su server no corre, devuelve available:false — la vista se degrada.
+	// Cross-workspace a propósito: ves todo lo que corre en la máquina.
+	mux.HandleFunc("/api/herdr", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(herdr.Snapshot())
+	})
+	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		txt, err := herdr.PaneRead(r.URL.Query().Get("id"), 60)
+		if err != nil {
+			_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no pude leer el pane"})
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(map[string]string{"text": txt})
 	})
 
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
