@@ -90,3 +90,36 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildSessionHilo(t *testing.T) {
+	s, err := store.Open(t.TempDir() + "/t.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	must(t, s.SeedBuiltinPrices())
+	must(t, s.UpsertMachine("m", "h", "darwin", "arm64", "laptop", 1))
+	must(t, s.UpsertWorkspace("ws", "r", "n", 1))
+	must(t, s.UpsertSession("S", "m", "ws", "claude-code", 1, 1))
+	must(t, s.UpsertAgent("S", "main", "", "orquestador", "", 0, 1, 1))
+	must(t, s.UpsertCall(store.Call{MessageID: "c", SessionID: "S", AgentID: "main",
+		Model: "claude-sonnet-5", Out: 1_000_000, TS: 100}))
+	// el hilo, en desorden de seq → debe salir ordenado ASC
+	must(t, s.UpsertThread("S", "main", store.ThreadItem{Seq: 20, TS: 102, Kind: "text", Text: "listo"}))
+	must(t, s.UpsertThread("S", "main", store.ThreadItem{Seq: 10, TS: 100, Kind: "think", Text: "pensando"}))
+	must(t, s.UpsertThread("S", "main", store.ThreadItem{Seq: 10, TS: 100, Kind: "think", Text: "dup"})) // idempotente
+	d, err := BuildSession(s.DB, "S", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Agents) != 1 {
+		t.Fatalf("agentes = %d", len(d.Agents))
+	}
+	th := d.Agents[0].Thread
+	if len(th) != 2 {
+		t.Fatalf("hilo = %d, quiero 2 (seq 10 dup ignorado)", len(th))
+	}
+	if th[0].K != "think" || th[1].K != "text" {
+		t.Fatalf("hilo desordenado: %s, %s", th[0].K, th[1].K)
+	}
+}

@@ -113,9 +113,19 @@ estáticos; la sonda viva es OPERAR, no se corre), `/api/task-git` (git+gh) y
 corvux: Docs con 8 comandos/14 agentes, 5 MCPs, el grafo de 63 eventos, el chip
 "directo a main" del widget.
 
-Pendiente: `/api/session` (el hilo de razonamiento — el colector aún no
-persiste el texto/pensamiento por agente; se suma cuando lo haga) y el plano de
-OPERAR en Go (Fase 3+: crear tareas, responder — ADR-0010).
+**Razonamiento (2026-07-17):** migración `002_thread` + el colector persiste
+el hilo por agente (texto/pensamiento/tool, REDACTADO antes del disco vía
+`internal/redact`; seq = offset×100+bloque → idempotente). `/api/session` lo
+sirve. Verificado desde el daemon contra corvux: 16 agentes, 708 items,
+pausas/duraciones/costo, sin secretos crudos. **Paridad de LECTURA completa** —
+el daemon sirve todo lo que el panel de Python observa.
+
+Un bug real que salió aquí: `SetMaxOpenConns(1)` colgaba las lecturas del API
+detrás de las escrituras del colector. WAL da lectores concurrentes, pero no
+con una sola conexión → subido a 4 (1 escritor + N lectores).
+
+Pendiente: el plano de OPERAR en Go (Fase 3+: crear tareas, responder —
+ADR-0010) y los adaptadores multi-CLI (OpenCode/Codex/Kimi) + herdr.
 
 ## Fase 5 — El tablero
 

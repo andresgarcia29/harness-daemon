@@ -287,6 +287,16 @@ func run(port int, wsPath string) int {
 		rw.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(rw).Encode(api.BuildTaskGit(w.Path, r.URL.Query().Get("task")))
 	})
+	mux.HandleFunc("/api/session", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		d, err := api.BuildSession(st.DB, r.URL.Query().Get("id"), time.Now().Unix())
+		if err != nil {
+			rw.WriteHeader(500)
+			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(d)
+	})
 
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
 	// /api ni /health ni /admin.
