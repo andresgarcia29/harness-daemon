@@ -121,15 +121,19 @@ func parse(out []byte) State {
 
 // PaneRead devuelve el terminal EN VIVO de un pane (redactado — una terminal
 // puede tener un token en pantalla). --source visible = lo que se ve ahora.
-func PaneRead(paneID string, lines int) (string, error) {
+// format "ansi" conserva los colores SGR (el frontend los renderiza).
+func PaneRead(paneID string, lines int, format string) (string, error) {
 	if paneID == "" {
 		return "", nil
 	}
 	if lines <= 0 || lines > 200 {
 		lines = 60
 	}
+	if format != "ansi" {
+		format = "text"
+	}
 	out, err := run(4*time.Second, "pane", "read", paneID,
-		"--source", "visible", "--lines", itoa(lines), "--format", "text")
+		"--source", "visible", "--lines", itoa(lines), "--format", format)
 	if err != nil {
 		return "", err
 	}

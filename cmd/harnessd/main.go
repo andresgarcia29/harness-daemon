@@ -330,7 +330,7 @@ func run(port int, wsPath string) int {
 	})
 	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		txt, err := herdr.PaneRead(r.URL.Query().Get("id"), 60)
+		txt, err := herdr.PaneRead(r.URL.Query().Get("id"), 60, r.URL.Query().Get("fmt"))
 		if err != nil {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no pude leer el pane"})
 			return
