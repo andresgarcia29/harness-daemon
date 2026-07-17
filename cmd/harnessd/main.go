@@ -249,6 +249,7 @@ func run(port int, wsPath string) int {
 		}
 		snap.Herdr = herdr.Snapshot()
 		snap.Connections = api.Connections()
+		snap.Workspace.Name = w.Name
 		_ = json.NewEncoder(rw).Encode(snap)
 	})
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
@@ -271,6 +272,7 @@ func run(port int, wsPath string) int {
 			}
 			snap.Herdr = herdr.Snapshot()
 			snap.Connections = api.Connections()
+			snap.Workspace.Name = w.Name
 			b, _ := json.Marshal(snap)
 			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
 				return false

@@ -12,6 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/redact"
@@ -25,6 +27,7 @@ type Pane struct {
 	ForegroundCwd string `json:"foreground_cwd"`
 	AgentStatus   string `json:"agent_status"`
 	Focused       bool   `json:"focused"`
+	Program       string `json:"program,omitempty"` // "Claude Code" | "Kimi" | … detectado
 }
 type Tab struct {
 	TabID       string `json:"tab_id"`
@@ -116,7 +119,94 @@ func parse(out []byte) State {
 	if s.Agents != nil {
 		st.Agents = s.Agents
 	}
+	enrichPrograms(st.Panes)
 	return st
+}
+
+// ── Detección del programa que corre (Claude Code / Kimi / …) ────────────
+var (
+	progMu    sync.Mutex
+	progCache = map[string]progEntry{}
+)
+
+type progEntry struct {
+	prog string
+	at   time.Time
+}
+
+// enrichPrograms llena Pane.Program vía process-info, SOLO para panes con un
+// agente detectado (status != unknown). Cache de 15 s por pane, en paralelo:
+// no infla el snapshot.
+func enrichPrograms(panes []Pane) {
+	var wg sync.WaitGroup
+	for i := range panes {
+		if panes[i].AgentStatus == "" || panes[i].AgentStatus == "unknown" {
+			continue
+		}
+		id := panes[i].PaneID
+		progMu.Lock()
+		e, ok := progCache[id]
+		progMu.Unlock()
+		if ok && time.Since(e.at) < 15*time.Second {
+			panes[i].Program = e.prog
+			continue
+		}
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			prog := detectProgram(id)
+			progMu.Lock()
+			progCache[id] = progEntry{prog, time.Now()}
+			progMu.Unlock()
+			panes[idx].Program = prog
+		}(i)
+	}
+	wg.Wait()
+}
+
+var agentPrograms = []struct{ needle, label string }{
+	{"claude", "Claude Code"}, {"kimi", "Kimi"}, {"codex", "Codex"},
+	{"opencode", "OpenCode"}, {"cursor", "Cursor"}, {"aider", "Aider"},
+	{"gemini", "Gemini"}, {"vertex", "Vertex"}, {"amp", "Amp"}, {"copilot", "Copilot"},
+}
+
+func detectProgram(paneID string) string {
+	out, err := run(3*time.Second, "pane", "process-info", "--pane", paneID)
+	if err != nil {
+		return ""
+	}
+	var env struct {
+		Result struct {
+			Info struct {
+				Foreground []struct {
+					Argv0   string `json:"argv0"`
+					Name    string `json:"name"`
+					Cmdline string `json:"cmdline"`
+				} `json:"foreground_processes"`
+			} `json:"process_info"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(out, &env) != nil {
+		return ""
+	}
+	for _, p := range env.Result.Info.Foreground {
+		hay := strings.ToLower(p.Argv0 + " " + p.Name + " " + p.Cmdline)
+		for _, ap := range agentPrograms {
+			if strings.Contains(hay, ap.needle) {
+				return ap.label
+			}
+		}
+	}
+	return ""
+}
+
+// SessionStop detiene una sesión ENTERA de herdr (cierra todas sus terminales).
+func SessionStop(name string) error {
+	if name == "" {
+		name = "default"
+	}
+	_, err := run(6*time.Second, "session", "stop", name)
+	return err
 }
 
 // PaneRead devuelve el terminal EN VIVO de un pane (redactado — una terminal

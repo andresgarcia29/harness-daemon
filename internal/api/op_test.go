@@ -306,3 +306,17 @@ func TestSafePathYLabel(t *testing.T) {
 		t.Fatalf("labelOK dejó pasar shell: %q", labelOK("hola; rm -rf /"))
 	}
 }
+
+func TestOpHerdrStopSession(t *testing.T) {
+	op, _ := newOpT(t)
+	// stop-session con id → válido en el switch; sin herdr corriendo el test da 400
+	rr := post(t, op.OpHerdr, op.Token, map[string]any{"action": "stop-session", "id": "default"})
+	if rr.Code != 400 && rr.Code != 200 && rr.Code != 500 {
+		t.Fatalf("stop-session: code inesperado %d", rr.Code)
+	}
+	// sin token → 403
+	rr = post(t, op.OpHerdr, "", map[string]any{"action": "stop-session", "id": "default"})
+	if rr.Code != 403 {
+		t.Fatalf("sin token: %d", rr.Code)
+	}
+}
