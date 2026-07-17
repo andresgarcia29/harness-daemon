@@ -14,6 +14,15 @@ test: ## vet + tests
 run: build ## arranca en primer plano
 	@./bin/harnessd run
 
+init: build ## arranca si no hay ninguno (idempotente: diez sesiones, un daemon)
+	@./bin/harnessd ensure
+
+status: build ## ¿quién tiene el puerto?
+	@./bin/harnessd status
+
+stop: build ## lo para (ojo: el daemon es global a todos tus workspaces)
+	@./bin/harnessd stop
+
 dist: ## binarios para las 4 plataformas (lo que consume el plugin)
 	@for p in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do \
 	  os=$${p%/*}; arch=$${p#*/}; \
@@ -26,4 +35,4 @@ dist: ## binarios para las 4 plataformas (lo que consume el plugin)
 clean: ## limpia
 	@rm -rf bin dist
 
-.PHONY: help build test run dist clean
+.PHONY: help build test run init status stop dist clean
