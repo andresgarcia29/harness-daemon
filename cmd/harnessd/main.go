@@ -229,7 +229,7 @@ func run(port int, wsPath string) int {
 	// Fase 1: el daemon ES el backend del panel. Sirve el snapshot (leído del
 	// SQLite) y el build de React embebido. Un proceso, todos los workspaces.
 	mux.HandleFunc("/api/state", func(rw http.ResponseWriter, r *http.Request) {
-		snap, err := api.Build(st.DB, w.ID, time.Now().Unix())
+		snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
 		rw.Header().Set("Content-Type", "application/json")
 		rw.Header().Set("Cache-Control", "no-store")
 		if err != nil {
@@ -253,7 +253,7 @@ func run(port int, wsPath string) int {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		send := func() bool {
-			snap, err := api.Build(st.DB, w.ID, time.Now().Unix())
+			snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
 			if err != nil {
 				return true
 			}
@@ -278,6 +278,16 @@ func run(port int, wsPath string) int {
 			}
 		}
 	})
+	// Paridad de lectura: el grafo completo de una tarea, sus chips de git.
+	mux.HandleFunc("/api/task-events", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(api.TaskEvents(st.DB, w.ID, r.URL.Query().Get("task")))
+	})
+	mux.HandleFunc("/api/task-git", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(api.BuildTaskGit(w.Path, r.URL.Query().Get("task")))
+	})
+
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
 	// /api ni /health ni /admin.
 	web := webui.Handler()
