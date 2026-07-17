@@ -147,6 +147,7 @@ func run(port int, wsPath string) int {
 		return 1
 	}
 	defer st.Close()
+	_ = st.SeedBuiltinPrices() // no pisa ediciones del usuario; sin esto todo costo es NULL
 	col := collect.New(st, m, w)
 	collectQuit := make(chan struct{})
 	go func() {
@@ -176,8 +177,9 @@ func run(port int, wsPath string) int {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		costs, _ := st.Costs()
 		_ = json.NewEncoder(rw).Encode(map[string]any{
-			"rows": counts, "workspace": w.Name, "db": dbPath,
+			"rows": counts, "costs": costs, "workspace": w.Name, "db": dbPath,
 		})
 	})
 	quit := make(chan struct{})

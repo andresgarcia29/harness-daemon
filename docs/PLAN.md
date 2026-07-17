@@ -73,10 +73,16 @@ en `/api/stats` al siguiente tick.
 - El esquema canónico vive ahora en `internal/store/migrations/` (go:embed no
   alcanza fuera del paquete; dos copias del único archivo caro era divergencia
   con fecha). `db/migrations/README.md` apunta ahí.
-- **Pendiente de la fase**: registro de precios (builtin + LiteLLM + override) —
-  hoy `prices` está vacía y todo costo es NULL, que es honesto pero inútil para
-  Gastos; rotación `(dev,ino)` fina (hoy: `size < offset` → relee, y los UPSERTs
-  hacen la relectura gratis).
+- Precios builtin sembrados al arranque (`SeedBuiltinPrices`, ON CONFLICT DO
+  NOTHING: la edición del usuario gana para siempre) y `/api/stats` cotiza:
+  `costs.cost_usd` viaja SIEMPRE con `unpriced_calls` — un total que calla lo
+  que no pudo cotizar es un número inventado con aspecto de dato. Contra los
+  transcripts reales: $396 estimados, 1309/1309 cotizables. (El panel Python
+  estima $434 sobre las mismas fuentes: métodos de corte distintos — ambos son
+  ESTIMADOS y lo dicen; la báscula oficial sigue siendo ccusage.)
+- **Pendiente de la fase**: sync de precios LiteLLM/OpenRouter (el panel ya lo
+  hace contra OpenRouter — portarlo); rotación `(dev,ino)` fina (hoy:
+  `size < offset` → relee, y los UPSERTs hacen la relectura gratis).
 
 ## Fase 4 — Que el harness cuente lo que decide
 
