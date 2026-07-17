@@ -515,3 +515,70 @@ func DBInfo(db *sql.DB, path string) map[string]any {
 	info["machines"], info["calls"], info["events"] = machines, calls, events
 	return info
 }
+
+// OpHerdr — control de ciclo de vida de herdr (interrumpir, cerrar pane/tab/
+// workspace). Toda acción es DESTRUCTIVA: el frontend pide confirmación. El id
+// se valida contra el snapshot VIVO — jamás pasamos ids arbitrarios al CLI.
+func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	action, id := s(b, "action"), s(b, "id")
+	if id == "" {
+		fail(rw, 400, "falta el id")
+		return
+	}
+	st := herdr.Snapshot()
+	if !st.Available {
+		fail(rw, 400, "herdr no está corriendo")
+		return
+	}
+	// validar que el id EXISTA en el snapshot, del tipo correcto
+	valid := false
+	switch action {
+	case "interrupt", "close-pane":
+		for _, p := range st.Panes {
+			if p.PaneID == id {
+				valid = true
+			}
+		}
+	case "close-tab":
+		for _, t := range st.Tabs {
+			if t.TabID == id {
+				valid = true
+			}
+		}
+	case "close-workspace":
+		for _, w := range st.Workspaces {
+			if w.WorkspaceID == id {
+				valid = true
+			}
+		}
+	default:
+		fail(rw, 400, "acción desconocida")
+		return
+	}
+	if !valid {
+		fail(rw, 404, "ese elemento ya no existe en herdr")
+		return
+	}
+	var err error
+	var verb string
+	switch action {
+	case "interrupt":
+		err, verb = herdr.Interrupt(id), "interrumpí (Ctrl-C)"
+	case "close-pane":
+		err, verb = herdr.ClosePane(id), "cerré la terminal"
+	case "close-tab":
+		err, verb = herdr.CloseTab(id), "cerré el tab"
+	case "close-workspace":
+		err, verb = herdr.CloseWorkspace(id), "cerré el workspace"
+	}
+	if err != nil {
+		fail(rw, 500, "herdr no aceptó la acción: "+redact.Clip(err.Error(), 120))
+		return
+	}
+	o.emit("decision", "el humano "+verb+" desde el panel: herdr "+id, "")
+	writeJSON(rw, 200, map[string]any{"ok": true, "action": action, "id": id})
+}

@@ -237,3 +237,28 @@ func TestSyncPreciosDesdeOpenRouter(t *testing.T) {
 		t.Fatalf("segunda pasada agregó: %v", added2)
 	}
 }
+
+func TestOpHerdrValida(t *testing.T) {
+	op, _ := newOpT(t)
+	// sin id → 400
+	rr := post(t, op.OpHerdr, op.Token, map[string]any{"action": "close-pane"})
+	if rr.Code != 400 {
+		t.Fatalf("sin id: code = %d, quiero 400", rr.Code)
+	}
+	// id inexistente: 400 si herdr no corre, 404 si corre pero el pane no está.
+	// Ambos son rechazos honestos — jamás ejecuta sobre un id inventado.
+	rr = post(t, op.OpHerdr, op.Token, map[string]any{"action": "close-pane", "id": "w9:p999"})
+	if rr.Code != 400 && rr.Code != 404 {
+		t.Fatalf("id inválido: code = %d, quiero 400 o 404", rr.Code)
+	}
+	// acción desconocida → 400 (sin id se corta antes; con id llega al switch)
+	rr = post(t, op.OpHerdr, op.Token, map[string]any{"action": "rm-rf", "id": "x"})
+	if rr.Code != 400 {
+		t.Fatalf("acción rara: code = %d, quiero 400", rr.Code)
+	}
+	// sin token → 403 (guard primero)
+	rr = post(t, op.OpHerdr, "", map[string]any{"action": "close-pane", "id": "w1:p1"})
+	if rr.Code != 403 {
+		t.Fatalf("sin token: code = %d, quiero 403", rr.Code)
+	}
+}
