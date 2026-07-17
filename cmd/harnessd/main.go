@@ -1,0 +1,211 @@
+// harnessd — el daemon del harness. Observa, no ejecuta.
+//
+// Modos (ADR-0001): all-in-one · collect · serve
+// Leyes: solo 127.0.0.1 · nunca ejecuta código del repo · nunca actúa sobre el
+// workspace · si no cabe en el tablero, no sale de la máquina (ADR-0007/0009).
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/andresgarcia29/harness-daemon/internal/ident"
+	"github.com/andresgarcia29/harness-daemon/internal/lock"
+)
+
+// Version la inyecta el build: -ldflags "-X main.Version=0.1.0"
+var Version = "dev"
+
+const defaultPort = 7717
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(2)
+	}
+	cmd := os.Args[1]
+	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
+	port := fs.Int("port", defaultPort, "puerto (solo 127.0.0.1)")
+	ws := fs.String("workspace", ".", "workspace a observar")
+	_ = fs.Parse(os.Args[2:])
+
+	switch cmd {
+	case "version":
+		fmt.Println(Version)
+	case "selftest":
+		os.Exit(selftest())
+	case "ensure":
+		os.Exit(ensure(*port, *ws))
+	case "run":
+		os.Exit(run(*port, *ws))
+	case "status":
+		os.Exit(status(*port))
+	case "stop":
+		os.Exit(stop(*port))
+	default:
+		usage()
+		os.Exit(2)
+	}
+}
+
+func usage() {
+	fmt.Fprint(os.Stderr, `harnessd — observa el trabajo de los agentes. Solo lectura, solo local.
+
+  harnessd ensure     arranca si no hay ninguno (idempotente — diez sesiones,
+                      un daemon: gana quien logre el bind del puerto)
+  harnessd run        arranca en primer plano
+  harnessd status     pregunta quién tiene el puerto
+  harnessd stop       lo para
+  harnessd version    versión
+  harnessd selftest   verificación de arranque (la usa el updater ANTES de
+                      cambiar el binario: si esto falla, no hay swap)
+
+Flags: --port (7717) --workspace (.)
+`)
+}
+
+// selftest: ¿este binario arranca en esta máquina? Lo corre el updater sobre el
+// binario NUEVO antes de hacer el rename. Atrapa arquitectura equivocada,
+// descarga corrupta y glibc vieja — antes de que sea el binario en producción.
+// Ver ADR-0006.
+func selftest() int {
+	m, err := ident.ThisMachine()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ selftest: identidad de máquina: %v\n", err)
+		return 1
+	}
+	tmp, err := os.MkdirTemp("", "harnessd-selftest")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ selftest: no puedo escribir en temp: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.WriteFile(filepath.Join(tmp, "probe"), []byte("ok"), 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ selftest: escritura: %v\n", err)
+		return 1
+	}
+	fmt.Printf("✅ harnessd %s · %s/%s · máquina %s… · ok\n",
+		Version, m.OS, m.Arch, m.ID[:8])
+	return 0
+}
+
+// ensure: el que llaman las diez sesiones. Idempotente por diseño.
+func ensure(port int, wsPath string) int {
+	if h, err := lock.Probe(port); err == nil && h.Name == "harnessd" {
+		fmt.Printf("✅ harnessd ya corriendo (pid %d, v%s) → http://127.0.0.1:%d\n", h.PID, h.Version, port)
+		return 0 // nueve de cada diez llegan aquí, en ~5ms
+	}
+	return run(port, wsPath)
+}
+
+func run(port int, wsPath string) int {
+	started := time.Now()
+	m, err := ident.ThisMachine()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		return 1
+	}
+	w, err := ident.ResolveWorkspace(wsPath, m.ID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		return 1
+	}
+
+	ln, err := lock.Acquire(port)
+	if err != nil {
+		// No es un fallo: es el singleton funcionando.
+		fmt.Fprintf(os.Stderr, "ℹ️  %v\n", err)
+		if err == lock.ErrPortBusyForeign {
+			fmt.Fprintf(os.Stderr, "   ↳ el puerto %d lo tiene otro proceso. Usa --port o libéralo.\n", port)
+			return 1
+		}
+		return 0
+	}
+	defer ln.Close()
+
+	health := lock.Health{
+		Name: "harnessd", Version: Version, Protocol: lock.Protocol,
+		PID: os.Getpid(), Mode: "all-in-one", Started: started.Unix(),
+		DB: filepath.Join(ident.ConfigDir(), "harness.db"),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(health)
+	})
+	quit := make(chan struct{})
+	mux.HandleFunc("/admin/quit", func(rw http.ResponseWriter, r *http.Request) {
+		// Solo 127.0.0.1 (el listener ya lo garantiza), y solo POST: un GET
+		// desde una pestaña cualquiera no debe poder matar el daemon.
+		if r.Method != http.MethodPost {
+			http.Error(rw, "usa POST", http.StatusMethodNotAllowed)
+			return
+		}
+		rw.WriteHeader(200)
+		close(quit)
+	})
+
+	srv := &http.Server{Handler: mux}
+	go func() { _ = srv.Serve(ln) }()
+
+	fmt.Printf("🔭 harnessd %s → http://127.0.0.1:%d\n", Version, port)
+	fmt.Printf("   máquina   %s… (%s/%s, %s)\n", m.ID[:8], m.OS, m.Arch, m.Kind)
+	if w.Local {
+		fmt.Printf("   workspace %s — SIN git remote: es local a esta máquina y no se puede unificar con otras\n", w.Name)
+	} else {
+		fmt.Printf("   workspace %s → %s\n", w.Name, w.Remote)
+	}
+	fmt.Printf("   solo lectura · solo 127.0.0.1 · Ctrl-C para salir\n")
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-sig:
+	case <-quit:
+	}
+	fmt.Println("\n👋 harnessd fuera. No tocó nada.")
+	return 0
+}
+
+func status(port int) int {
+	h, err := lock.Probe(port)
+	if err != nil {
+		fmt.Printf("○ no hay harnessd en %d (%v)\n", port, err)
+		return 1
+	}
+	fmt.Printf("● harnessd v%s · pid %d · modo %s · protocolo %d\n", h.Version, h.PID, h.Mode, h.Protocol)
+	fmt.Printf("  arriba desde %s\n", time.Unix(h.Started, 0).Format(time.RFC3339))
+	fmt.Printf("  db %s\n", h.DB)
+	return 0
+}
+
+func stop(port int) int {
+	h, err := lock.Probe(port)
+	if err != nil {
+		fmt.Printf("○ no había nada que parar en %d\n", port)
+		return 0
+	}
+	c := &http.Client{Timeout: 3 * time.Second}
+	resp, err := c.Post(fmt.Sprintf("http://127.0.0.1:%d/admin/quit", port), "", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ no pude pararlo: %v\n", err)
+		return 1
+	}
+	resp.Body.Close()
+	// El daemon es GLOBAL y `make stop` es por workspace: si tienes tres repos
+	// abiertos, acabas de parar el que usaban los otros dos. Se acepta a
+	// propósito (ADR-0005) — pero hay que DECIRLO, no dejar que se pregunte
+	// por qué su panel murió.
+	fmt.Printf("👋 parado harnessd v%s (pid %d).\n", h.Version, h.PID)
+	fmt.Printf("   Ojo: el daemon es global. Si tenías otros workspaces abiertos,\n")
+	fmt.Printf("   también se quedaron sin panel. `harnessd ensure` lo revive.\n")
+	return 0
+}
