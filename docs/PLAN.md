@@ -123,3 +123,25 @@ ve mejor en una demo.
 Por eso las negativas se enseñan igual de grandes que los éxitos. *"El gate
 bloqueó a su propio agente por debilitar un test"* es la línea más persuasiva
 del producto — y la única que no se puede fingir.
+
+---
+
+## Nota de método: no construyas UI a ciegas
+
+La UI del panel se construyó dos veces sin poder verla, y las dos salió mal —
+la segunda vez hicieron falta cuatro capturas del usuario para descubrir que era
+un muro ilegible. Los tests de contrato pasaban en verde todo el tiempo: medían
+que no faltara un campo y que el SSE empujara. Medían lo que se podía medir, no
+lo que importaba.
+
+El arreglo es barato y hay que usarlo SIEMPRE que se toque el front:
+
+```bash
+npm i puppeteer-core          # usa el Chrome que ya tienes; no descarga nada
+node shot.js                  # captura las 4 pestañas y reporta errores JS
+```
+
+Chrome headless directo es inestable en macOS (GCM, allocator); puppeteer-core
+apuntando a `/Applications/Google Chrome.app/...` funciona a la primera.
+
+**Regla: ningún cambio de front se commitea sin una captura mirada.**
