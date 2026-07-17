@@ -582,3 +582,143 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 	o.emit("decision", "el humano "+verb+" desde el panel: herdr "+id, "")
 	writeJSON(rw, 200, map[string]any{"ok": true, "action": action, "id": id})
 }
+
+// OpHerdrKey — respuesta interactiva: manda teclas a un pane (contestar el
+// menú de un agente). El pane se valida contra el snapshot vivo; las teclas se
+// filtran a un set seguro (dígitos, y/n/s, Enter, flechas, Escape).
+func (o *Op) OpHerdrKey(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	pane := s(b, "pane")
+	if pane == "" {
+		fail(rw, 400, "falta el pane")
+		return
+	}
+	raw, _ := b["keys"].([]any)
+	var keys []string
+	for _, k := range raw {
+		if ks, ok2 := k.(string); ok2 && herdrKeyOK(ks) {
+			keys = append(keys, ks)
+		}
+	}
+	if len(keys) == 0 {
+		fail(rw, 400, "sin teclas válidas")
+		return
+	}
+	st := herdr.Snapshot()
+	if !st.Available {
+		fail(rw, 400, "herdr no está corriendo")
+		return
+	}
+	found := false
+	for _, p := range st.Panes {
+		if p.PaneID == pane {
+			found = true
+		}
+	}
+	if !found {
+		fail(rw, 404, "ese pane ya no existe")
+		return
+	}
+	if err := herdr.PaneKeys(pane, keys); err != nil {
+		fail(rw, 500, "herdr no aceptó las teclas")
+		return
+	}
+	o.emit("decision", "el humano respondió el menú de un agente (herdr "+pane+"): "+strings.Join(keys, " "), "")
+	writeJSON(rw, 200, map[string]any{"ok": true})
+}
+
+var okKeys = map[string]bool{
+	"Enter": true, "Escape": true, "Up": true, "Down": true, "Left": true, "Right": true,
+	"Tab": true, "Space": true, "y": true, "n": true, "s": true, "Y": true, "N": true,
+}
+
+func herdrKeyOK(k string) bool {
+	if len(k) == 1 && k[0] >= '0' && k[0] <= '9' {
+		return true // dígito de menú
+	}
+	return okKeys[k]
+}
+
+func safePath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || !strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+		return "" // solo rutas absolutas sin escapes; vacío = herdr decide
+	}
+	return p
+}
+
+func labelOK(l string) string {
+	l = strings.TrimSpace(l)
+	if len(l) > 60 {
+		l = l[:60]
+	}
+	out := make([]rune, 0, len(l))
+	for _, c := range l {
+		if c == '-' || c == '_' || c == ' ' || (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			out = append(out, c)
+		}
+	}
+	return string(out)
+}
+
+// OpHerdrOpen — abrir cosas en herdr: workspace, terminal (tab), split de pane.
+// Persisten por naturaleza de herdr (sobreviven al detach). Guardas + validación.
+func (o *Op) OpHerdrOpen(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	action := s(b, "action")
+	cwd := safePath(s(b, "cwd"))
+	label := labelOK(s(b, "label"))
+	st := herdr.Snapshot()
+	if !st.Available {
+		fail(rw, 400, "herdr no está corriendo")
+		return
+	}
+	var newID string
+	var err error
+	switch action {
+	case "new-workspace":
+		newID, err = herdr.WorkspaceCreate(label, cwd)
+	case "new-terminal": // un tab nuevo en un workspace
+		wsID := s(b, "workspace_id")
+		valid := false
+		for _, w := range st.Workspaces {
+			if w.WorkspaceID == wsID {
+				valid = true
+			}
+		}
+		if !valid {
+			fail(rw, 404, "ese workspace ya no existe")
+			return
+		}
+		newID, err = herdr.TabCreate(wsID, label, cwd)
+	case "split-pane":
+		pane := s(b, "pane")
+		valid := false
+		for _, p := range st.Panes {
+			if p.PaneID == pane {
+				valid = true
+			}
+		}
+		if !valid {
+			fail(rw, 404, "ese pane ya no existe")
+			return
+		}
+		newID, err = herdr.PaneSplit(pane, s(b, "direction"), cwd)
+	default:
+		fail(rw, 400, "acción desconocida")
+		return
+	}
+	if err != nil {
+		fail(rw, 500, "herdr no aceptó: "+redact.Clip(err.Error(), 120))
+		return
+	}
+	o.emit("decision", "el humano abrió desde el panel ("+action+"): "+newID, "")
+	writeJSON(rw, 200, map[string]any{"ok": true, "id": newID})
+}

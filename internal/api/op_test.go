@@ -262,3 +262,47 @@ func TestOpHerdrValida(t *testing.T) {
 		t.Fatalf("sin token: code = %d, quiero 403", rr.Code)
 	}
 }
+
+func TestOpHerdrKeyFiltra(t *testing.T) {
+	op, _ := newOpT(t)
+	// sin teclas válidas → 400 (la letra "rm" no pasa el filtro)
+	rr := post(t, op.OpHerdrKey, op.Token, map[string]any{"pane": "w1:p1", "keys": []any{"rm", "sudo"}})
+	if rr.Code != 400 {
+		t.Fatalf("teclas peligrosas: code = %d, quiero 400", rr.Code)
+	}
+	// sin pane → 400
+	rr = post(t, op.OpHerdrKey, op.Token, map[string]any{"keys": []any{"1"}})
+	if rr.Code != 400 {
+		t.Fatalf("sin pane: code = %d", rr.Code)
+	}
+	// sin token → 403
+	rr = post(t, op.OpHerdrKey, "", map[string]any{"pane": "w1:p1", "keys": []any{"1"}})
+	if rr.Code != 403 {
+		t.Fatalf("sin token: %d", rr.Code)
+	}
+}
+
+func TestHerdrKeyOK(t *testing.T) {
+	for _, k := range []string{"0", "5", "9", "y", "n", "Enter", "Up", "Escape"} {
+		if !herdrKeyOK(k) {
+			t.Errorf("%q debería ser válida", k)
+		}
+	}
+	for _, k := range []string{"rm", "sudo", "10", ";", "a", "$(x)"} {
+		if herdrKeyOK(k) {
+			t.Errorf("%q NO debería pasar el filtro", k)
+		}
+	}
+}
+
+func TestSafePathYLabel(t *testing.T) {
+	if safePath("relativo") != "" || safePath("/etc/../x") != "" {
+		t.Fatal("safePath debe rechazar relativas y ..")
+	}
+	if safePath("/tmp/x") != "/tmp/x" {
+		t.Fatal("safePath debe aceptar absolutas limpias")
+	}
+	if labelOK("hola; rm -rf /") != "hola rm -rf " {
+		t.Fatalf("labelOK dejó pasar shell: %q", labelOK("hola; rm -rf /"))
+	}
+}
