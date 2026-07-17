@@ -106,8 +106,16 @@ dice DAEMON y "Operar" se oculta (op:false: solo lectura por ahora). El
 frontend cae con gracia en lo que el daemon aún no sirve (op, hilo de
 razonamiento, chips de git, Docs/Skills) — se suman en fases siguientes.
 
-Pendiente para paridad total: `/api/session` (razonamiento), `/api/task-git`,
-`/api/task-events`, toolbox/mcp (Docs/Skills), y el plano de OPERAR en Go.
+**Paridad de lectura (2026-07-17, cont.):** `internal/api/inventory.go` porta
+Docs (comandos/agentes/gates/hooks/make), Skills & MCP (inventario + checks
+estáticos; la sonda viva es OPERAR, no se corre), `/api/task-git` (git+gh) y
+`/api/task-events` (arco completo del grafo). Verificado desde el daemon contra
+corvux: Docs con 8 comandos/14 agentes, 5 MCPs, el grafo de 63 eventos, el chip
+"directo a main" del widget.
+
+Pendiente: `/api/session` (el hilo de razonamiento — el colector aún no
+persiste el texto/pensamiento por agente; se suma cuando lo haga) y el plano de
+OPERAR en Go (Fase 3+: crear tareas, responder — ADR-0010).
 
 ## Fase 5 — El tablero
 

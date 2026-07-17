@@ -51,7 +51,7 @@ func TestBuildSnapshot(t *testing.T) {
 	must(t, s.UpsertCall(store.Call{MessageID: "c2b", SessionID: "sess1", AgentID: "a1",
 		Model: "claude-sonnet-5", In: 0, Out: 0, TS: 1800}))
 
-	snap, err := Build(s.DB, "ws1", 3000)
+	snap, err := Build(s.DB, "ws1", t.TempDir(), 3000)
 	if err != nil {
 		t.Fatal(err)
 	}
