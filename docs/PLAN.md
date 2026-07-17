@@ -93,6 +93,22 @@ sus decisiones y sus negativas.**
 - `/auto` emite fase, supuestos del ledger, y paradas
 - `deploy-watch.sh` emite el canary
 
+## Fase 1 — El daemon es el backend ✅ (2026-07-17)
+
+`internal/webui` embebe el build de React (go:embed; Node solo para construir),
+`internal/api` arma el snapshot desde SQLite con el MISMO contrato que el panel
+de Python. `run` sirve `/`, `/api/state` y `/api/stream` (SSE cada 2 s).
+
+Verificado sirviendo el panel DESDE el daemon contra corvux: mission-control,
+6 sesiones reales, gantt con pico 3 (tiempos de agente derivados de las
+llamadas, no del mtime), Gastos con barras/dona/tabla, $154 cotizado. El chip
+dice DAEMON y "Operar" se oculta (op:false: solo lectura por ahora). El
+frontend cae con gracia en lo que el daemon aún no sirve (op, hilo de
+razonamiento, chips de git, Docs/Skills) — se suman en fases siguientes.
+
+Pendiente para paridad total: `/api/session` (razonamiento), `/api/task-git`,
+`/api/task-events`, toolbox/mcp (Docs/Skills), y el plano de OPERAR en Go.
+
 ## Fase 5 — El tablero
 
 React + Vite + TS, **embebido en el binario** con `embed.FS` (Node solo en CI,
