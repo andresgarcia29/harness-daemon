@@ -195,3 +195,87 @@ func CloseWorkspace(wsID string) error {
 	_, err := run(5*time.Second, "workspace", "close", wsID)
 	return err
 }
+
+// ── Teclas (respuestas interactivas de menú) ─────────────────────────────
+
+// PaneKeys manda teclas literales a un pane (herdr pane send-keys). Para
+// contestar un menú de agente: la tecla del número, o "Enter"/"y"/"n". El
+// caller valida el pane contra el snapshot.
+func PaneKeys(paneID string, keys []string) error {
+	if paneID == "" || len(keys) == 0 {
+		return nil
+	}
+	args := append([]string{"pane", "send-keys", paneID}, keys...)
+	_, err := run(5*time.Second, args...)
+	return err
+}
+
+// ── Abrir (crear) — devuelven el id nuevo ────────────────────────────────
+
+func idFrom(out []byte, path ...string) string {
+	var m map[string]any
+	if json.Unmarshal(out, &m) != nil {
+		return ""
+	}
+	cur := any(m)
+	for _, k := range path {
+		mm, ok := cur.(map[string]any)
+		if !ok {
+			return ""
+		}
+		cur = mm[k]
+	}
+	s, _ := cur.(string)
+	return s
+}
+
+// WorkspaceCreate abre un workspace nuevo (grupo aislado de tabs/panes).
+func WorkspaceCreate(label, cwd string) (string, error) {
+	args := []string{"workspace", "create", "--no-focus"}
+	if cwd != "" {
+		args = append(args, "--cwd", cwd)
+	}
+	if label != "" {
+		args = append(args, "--label", label)
+	}
+	out, err := run(6*time.Second, args...)
+	if err != nil {
+		return "", err
+	}
+	return idFrom(out, "result", "workspace", "workspace_id"), nil
+}
+
+// TabCreate abre una terminal nueva (tab) en un workspace.
+func TabCreate(wsID, label, cwd string) (string, error) {
+	args := []string{"tab", "create", "--no-focus"}
+	if wsID != "" {
+		args = append(args, "--workspace", wsID)
+	}
+	if cwd != "" {
+		args = append(args, "--cwd", cwd)
+	}
+	if label != "" {
+		args = append(args, "--label", label)
+	}
+	out, err := run(6*time.Second, args...)
+	if err != nil {
+		return "", err
+	}
+	return idFrom(out, "result", "tab", "tab_id"), nil
+}
+
+// PaneSplit divide un pane (terminal lado a lado). dir: right | down.
+func PaneSplit(paneID, dir, cwd string) (string, error) {
+	if dir != "right" && dir != "down" {
+		dir = "down"
+	}
+	args := []string{"pane", "split", paneID, "--direction", dir, "--no-focus"}
+	if cwd != "" {
+		args = append(args, "--cwd", cwd)
+	}
+	out, err := run(6*time.Second, args...)
+	if err != nil {
+		return "", err
+	}
+	return idFrom(out, "result", "pane", "pane_id"), nil
+}
