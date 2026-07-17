@@ -15,7 +15,14 @@ tickets y trazas de trabajo sobre código de clientes.
 supuestos, modelo, tokens, costo, timings.
 
 **No sale nunca:** output crudo del agente, diffs, contenido de archivos,
-prompts del usuario (por defecto), valores de secretos (jamás, en ningún modo).
+valores de secretos (jamás, en ningún modo).
+
+**Los prompts del usuario: no por defecto, pero posible** (decisión del
+2026-07-17). Se modela como `daemon.privacy: metadata | full` en
+`harness-answers.yaml` — POR WORKSPACE, porque una laptop sirve a varios
+clientes: el workspace de un cliente sensible se queda en `metadata` mientras
+un proyecto propio puede subir texto si le sirve. `metadata` es el default y
+lo que no se elige explícitamente no viaja.
 
 ## Por qué esta regla y no otra
 
