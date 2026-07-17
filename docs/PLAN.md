@@ -124,8 +124,25 @@ Un bug real que salió aquí: `SetMaxOpenConns(1)` colgaba las lecturas del API
 detrás de las escrituras del colector. WAL da lectores concurrentes, pero no
 con una sola conexión → subido a 4 (1 escritor + N lectores).
 
-Pendiente: el plano de OPERAR en Go (Fase 3+: crear tareas, responder —
-ADR-0010) y los adaptadores multi-CLI (OpenCode/Codex/Kimi) + herdr.
+## herdr — la capa de ejecución, LEÍDA ✅ (2026-07-17)
+
+`internal/herdr` lee `herdr api snapshot` (workspaces/tabs/panes + agent_status:
+idle/working/blocked/done/unknown) y `herdr pane read <id> --source visible`
+(terminal en vivo, redactado). Endpoints `/api/herdr` y `/api/herdr/pane`. La
+vista "Terminales" del panel muestra TODAS las terminales de agentes de la
+máquina, cross-workspace, con su estado y su terminal en vivo (relee cada 2.5s).
+
+**Portable y opcional**: se detecta en runtime (`LookPath` + prueba el server).
+Si herdr no está o no corre → `available:false` con la razón y la vista enseña
+qué es y cómo instalarlo; el resto del panel funciona igual. Nada hardcodeado.
+
+Verificado contra herdr 0.7.3 real: workspaces corvux/latam/epicgames leídos,
+y el terminal en vivo de un pane demo renderizado en el panel (paso 1/6…4/6).
+
+Pendiente: el CONTROL (`herdr agent send` → responder desde la UI a cualquier
+agente; es OPERAR, necesita los guardrails de ADR-0010 en el daemon), y los
+adaptadores de archivo (OpenCode serve / Codex / Kimi) para las máquinas sin
+herdr.
 
 ## Fase 5 — El tablero
 
