@@ -109,6 +109,7 @@ type Snapshot struct {
 	Op          bool             `json:"op"`
 	Toolbox     *Toolbox         `json:"toolbox,omitempty"`
 	Mcp         []McpServer      `json:"mcp"`
+	Herdr       any              `json:"herdr,omitempty"`
 	Warning     string           `json:"warning,omitempty"`
 }
 type pubP struct {
@@ -130,7 +131,7 @@ func costOf(p price, u usage, ok bool) *float64 {
 func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error) {
 	prices, _ := loadPrices(db)
 	snap := &Snapshot{
-		TS: now, Mode: "daemon", Op: false,
+		TS: now, Mode: "daemon", Op: true,
 		Sessions: []session{}, Events: []event{}, Tasks: []task{},
 		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
 		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},

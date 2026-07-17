@@ -139,10 +139,34 @@ qué es y cómo instalarlo; el resto del panel funciona igual. Nada hardcodeado.
 Verificado contra herdr 0.7.3 real: workspaces corvux/latam/epicgames leídos,
 y el terminal en vivo de un pane demo renderizado en el panel (paso 1/6…4/6).
 
-Pendiente: el CONTROL (`herdr agent send` → responder desde la UI a cualquier
-agente; es OPERAR, necesita los guardrails de ADR-0010 en el daemon), y los
-adaptadores de archivo (OpenCode serve / Codex / Kimi) para las máquinas sin
-herdr.
+## El plano de OPERAR en Go + control por PTY ✅ (2026-07-17)
+
+`internal/api/op.go`: el plano completo, portado del panel de Python con los
+mismos guardrails (token por arranque inyectado en el HTML + X-Corvux-Token +
+check de Host + límite de body). Endpoints: op/task (task.md + claude -p /auto
+con --session-id conocido), op/respond (--resume), op/connect (valida contra el
+proveedor ANTES de guardar, 0600), op/sync-prices, y el nuevo **op/pane-send**:
+responder a CUALQUIER agente por su PTY de herdr (pane_id validado contra el
+snapshot vivo; texto acotado; jamás strings arbitrarios al CLI). El snapshot
+reporta op:true y el frontend enciende Operar + el responder de Terminales.
+
+Precios: **sync automático desde OpenRouter al arranque** (solo modelos
+observados sin precio, fail-open) + botón. Persisten en la tabla prices
+(source=openrouter) — cada máquina sincroniza igual → mismos precios en todas.
+`/api/db` expone el estado real del almacén (motor/ruta/tamaño/filas) para la
+tarjeta de Conexiones; Postgres queda anunciado sin botón hasta el modo nube.
+
+herdr viaja DENTRO del snapshot SSE (tiempo real, sin polling extra); el texto
+de un pane abierto se relee cada 1.5 s.
+
+Verificado end-to-end con herdr real: un pane de eco recibió texto enviado
+DESDE LA UI ("desde la UI: todo verificado") y su respuesta se renderizó en el
+panel; sin token → 403. Tests Go: guardas (token/Host), task con stub de
+claude, respond --resume, pane-send valida, connect con httptest (401 no
+guarda; 200 guarda 0600), sync de precios con catálogo falso.
+
+Pendiente: adaptadores de archivo (OpenCode serve / Codex / Kimi) para las
+máquinas sin herdr, y el modo nube (Fase 7).
 
 ## Fase 5 — El tablero
 
