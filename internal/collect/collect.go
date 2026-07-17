@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
+	"github.com/andresgarcia29/harness-daemon/internal/redact"
 	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
@@ -234,7 +235,7 @@ func (c *Collector) scanTranscripts(now int64) {
 		_ = c.St.UpsertSession(sid, c.Machine.ID, c.Workspace.ID, "claude-code",
 			mtime(f), mtime(f))
 		_ = c.St.UpsertAgent(sid, "main", "", "orquestador", "", 0, mtime(f), mtime(f))
-		c.tail(f, func(line []byte, _ int64) { c.ingest(line, sid, "main") })
+		c.tail(f, func(line []byte, off int64) { c.ingest(line, sid, "main", off) })
 
 		subs, _ := filepath.Glob(filepath.Join(c.projectDir, sid, "subagents", "agent-*.jsonl"))
 		for _, af := range subs {
@@ -254,21 +255,22 @@ func (c *Collector) scanTranscripts(now int64) {
 				}
 			}
 			_ = c.St.UpsertAgent(sid, aid, "main", typ, desc, depth, mtime(af), mtime(af))
-			c.tail(af, func(line []byte, _ int64) { c.ingest(line, sid, aid) })
+			c.tail(af, func(line []byte, off int64) { c.ingest(line, sid, aid, off) })
 		}
 	}
 }
 
 // ingest procesa UN record de transcript. Solo los hechos facturables.
-func (c *Collector) ingest(line []byte, sid, aid string) {
+func (c *Collector) ingest(line []byte, sid, aid string, off int64) {
 	var rec struct {
 		Type      string `json:"type"`
 		Timestamp string `json:"timestamp"`
 		RequestID string `json:"requestId"`
 		Message   struct {
-			ID    string `json:"id"`
-			Model string `json:"model"`
-			Usage struct {
+			ID      string          `json:"id"`
+			Model   string          `json:"model"`
+			Content json.RawMessage `json:"content"`
+			Usage   struct {
 				In        int64 `json:"input_tokens"`
 				Out       int64 `json:"output_tokens"`
 				CacheRead int64 `json:"cache_read_input_tokens"`
@@ -285,7 +287,7 @@ func (c *Collector) ingest(line []byte, sid, aid string) {
 	}
 	m := rec.Message
 	if m.ID == "" || m.Model == "" || m.Model == "<synthetic>" {
-		return // sintético o sin id: no es facturable
+		return // sintético o sin id: no es facturable ni razonamiento real
 	}
 	w5, w1 := m.Usage.Cache.E5m, m.Usage.Cache.E1h
 	if w5 == 0 && w1 == 0 && m.Usage.CacheFlat > 0 {
@@ -297,6 +299,58 @@ func (c *Collector) ingest(line []byte, sid, aid string) {
 		Model: m.Model, In: m.Usage.In, Out: m.Usage.Out,
 		CacheRead: m.Usage.CacheRead, CacheWrite5m: w5, CacheWrite1h: w1, TS: ts,
 	})
+
+	// El hilo de razonamiento: texto, pensamiento y herramientas. seq estable =
+	// offset del byte × 100 + índice de bloque → idempotente al re-leer. TODO
+	// texto va REDACTADO antes del disco (la ley de secretos también aplica a
+	// lo que se persiste, no solo a lo que se muestra).
+	var blocks []struct {
+		Type     string          `json:"type"`
+		Text     string          `json:"text"`
+		Thinking string          `json:"thinking"`
+		Name     string          `json:"name"`
+		Input    json.RawMessage `json:"input"`
+	}
+	if len(m.Content) == 0 || json.Unmarshal(m.Content, &blocks) != nil {
+		return
+	}
+	for i, b := range blocks {
+		it := store.ThreadItem{Seq: off*100 + int64(i), TS: ts}
+		switch b.Type {
+		case "text":
+			if b.Text == "" {
+				continue
+			}
+			it.Kind, it.Text = "text", redact.Clip(b.Text, 2000)
+		case "thinking":
+			if b.Thinking == "" {
+				continue
+			}
+			it.Kind, it.Text = "think", redact.Clip(b.Thinking, 2000)
+		case "tool_use":
+			it.Kind, it.Text, it.Hint = "tool", b.Name, toolHint(b.Input)
+		default:
+			continue
+		}
+		_ = c.St.UpsertThread(sid, aid, it)
+	}
+}
+
+// toolHint: una pista corta de qué hizo una herramienta, redactada.
+func toolHint(input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+	var m map[string]any
+	if json.Unmarshal(input, &m) != nil {
+		return ""
+	}
+	for _, k := range []string{"file_path", "path", "pattern", "command", "url", "query", "description"} {
+		if v, ok := m[k].(string); ok && v != "" {
+			return redact.Clip(v, 120)
+		}
+	}
+	return ""
 }
 
 // ── tail: lector incremental con offset persistido ───────────────────────

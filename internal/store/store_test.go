@@ -18,13 +18,20 @@ func open(t *testing.T) *Store {
 func TestMigrateEsIdempotente(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "m.db")
+	var first int
 	for i := 0; i < 2; i++ { // abrir dos veces = migrar dos veces
 		s, err := Open(path)
 		if err != nil {
 			t.Fatalf("Open #%d: %v", i, err)
 		}
-		if got := s.schemaVersion(); got != 1 {
-			t.Fatalf("schema_version = %d, quiero 1", got)
+		got := s.schemaVersion()
+		if got < 2 {
+			t.Fatalf("schema_version = %d, quiero >= 2 (hay 002_thread)", got)
+		}
+		if i == 0 {
+			first = got
+		} else if got != first {
+			t.Fatalf("re-abrir migró de más: %d → %d", first, got)
 		}
 		s.Close()
 	}

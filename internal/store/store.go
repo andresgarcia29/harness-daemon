@@ -38,9 +38,12 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// SQLite es un escritor a la vez; más conexiones = más SQLITE_BUSY, no más
-	// throughput. Una conexión serializa y el busy_timeout hace el resto.
-	db.SetMaxOpenConns(1)
+	// WAL = 1 escritor + N lectores CONCURRENTES. Con una sola conexión, una
+	// lectura del API se encolaba detrás de las escrituras del colector y el
+	// panel se colgaba mientras ingería. Varias conexiones dejan que las
+	// lecturas (snapshot, /api/session) corran mientras el colector escribe; las
+	// escrituras siguen serializadas por la app (un Tick a la vez) + busy_timeout.
+	db.SetMaxOpenConns(4)
 	s := &Store{DB: db}
 	if err := s.migrate(path); err != nil {
 		db.Close()
@@ -290,6 +293,55 @@ func (s *Store) Counts() (map[string]int64, error) {
 			return nil, err
 		}
 		out[t] = n
+	}
+	return out, nil
+}
+
+// ── Hilo de razonamiento (migración 002) ─────────────────────────────────
+
+// ThreadItem es un bloque del hilo de un agente.
+type ThreadItem struct {
+	Seq  int64
+	TS   int64
+	Kind string // text | think | tool
+	Text string
+	Hint string
+}
+
+// UpsertThread guarda un bloque; idempotente por (session, agent, seq).
+func (s *Store) UpsertThread(sessionID, agentID string, it ThreadItem) error {
+	var ts any
+	if it.TS > 0 {
+		ts = it.TS
+	}
+	_, err := s.DB.Exec(`
+		INSERT INTO agent_thread (session_id, agent_id, seq, ts, kind, text, hint)
+		VALUES (?,?,?,?,?,?,?)
+		ON CONFLICT(session_id, agent_id, seq) DO NOTHING`,
+		sessionID, agentID, it.Seq, ts, it.Kind, it.Text, it.Hint)
+	return err
+}
+
+// AgentThread devuelve el hilo de un agente en orden (acotado a los últimos N).
+func (s *Store) AgentThread(sessionID, agentID string, limit int) ([]ThreadItem, error) {
+	rows, err := s.DB.Query(`
+		SELECT seq, COALESCE(ts,0), kind, COALESCE(text,''), COALESCE(hint,'')
+		FROM agent_thread WHERE session_id = ? AND agent_id = ?
+		ORDER BY seq DESC LIMIT ?`, sessionID, agentID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ThreadItem
+	for rows.Next() {
+		var it ThreadItem
+		if rows.Scan(&it.Seq, &it.TS, &it.Kind, &it.Text, &it.Hint) == nil {
+			out = append(out, it)
+		}
+	}
+	// se pidió DESC para acotar a los últimos N; el hilo se lee ASC
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
 	}
 	return out, nil
 }
