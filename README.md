@@ -68,7 +68,7 @@ go build -o bin/harnessd ./cmd/harnessd
 
 ```
 modo          qué corre                        dónde miras
-all-in-one    colector + almacén + UI          127.0.0.1:7717   ← tu laptop
+all-in-one    colector + almacén + UI          127.0.0.1:7718   ← tu laptop
 collect       solo colector → sink remoto      —                ← el VPC, un CronJob de K8s
 serve         recibe + almacena + sirve UI     una URL          ← Kubernetes
 ```
@@ -79,7 +79,7 @@ filesystem local. Lo que corre en Kubernetes es `serve`: recibe, no observa.
 Y el sink es **por workspace**, no por máquina: una laptop trabaja para varios
 clientes, y cada workspace reporta al servidor del suyo — o se queda local.
 
-> Antes de montar nada en la nube: `ssh -L 7717:localhost:7717 tu-vpc` te da el
+> Antes de montar nada en la nube: `ssh -L 7718:localhost:7718 tu-vpc` te da el
 > panel del VPC hoy, con cero infraestructura. Con 1–3 máquinas, el túnel gana.
 
 ## Las decisiones, y por qué

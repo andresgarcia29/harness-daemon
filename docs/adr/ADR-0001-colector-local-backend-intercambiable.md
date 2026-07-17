@@ -22,7 +22,7 @@ Un binario, tres modos:
 
 | modo         | qué corre                        | dónde miras          |
 |--------------|----------------------------------|----------------------|
-| `all-in-one` | colector + almacén + UI          | `127.0.0.1:7717`     |
+| `all-in-one` | colector + almacén + UI          | `127.0.0.1:7718`     |
 | `collect`    | solo colector → sink remoto      | — (VPC, CronJob K8s) |
 | `serve`      | recibe + almacena + sirve la UI  | una URL              |
 
@@ -51,6 +51,6 @@ workspace.
   fragilidad, y SQLite sobre NFS tiene el locking roto. No.
 - **Que el agente reporte directo a la nube sin colector local**: obliga a cada
   CLI a saber de nosotros. El colector existe justo para que no tengan que saberlo.
-- **Antes de construir la nube: `ssh -L 7717:localhost:7717 vpc`** te da el
+- **Antes de construir la nube: `ssh -L 7718:localhost:7718 vpc`** te da el
   panel del VPC hoy, con cero infraestructura. Con 1–3 máquinas, el túnel gana.
   La nube se justifica con muchas máquinas o con gente sin SSH (un PM, un cliente).

@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -25,7 +27,7 @@ import (
 // Version la inyecta el build: -ldflags "-X main.Version=0.1.0"
 var Version = "dev"
 
-const defaultPort = 7717
+const defaultPort = 7718
 
 func main() {
 	if len(os.Args) < 2 {
@@ -69,7 +71,7 @@ func usage() {
   harnessd selftest   verificación de arranque (la usa el updater ANTES de
                       cambiar el binario: si esto falla, no hay swap)
 
-Flags: --port (7717) --workspace (.)
+Flags: --port (7718) --workspace (.)
 `)
 }
 
@@ -98,13 +100,53 @@ func selftest() int {
 	return 0
 }
 
-// ensure: el que llaman las diez sesiones. Idempotente por diseño.
+// ensure: el que llaman las diez sesiones. Idempotente por diseño — y SIEMPRE
+// regresa: si no hay daemon, se relanza a sí mismo con `run` en segundo plano
+// (sesión nueva, logs en ConfigDir) y espera a que /health conteste.
+//
+// La primera versión llamaba run() en primer plano: `make init` se quedaba
+// colgado para siempre con la terminal secuestrada. "El auto arranca" significa
+// que ensure LANZA y SE VA, no que ensure SE CONVIERTE en el daemon.
 func ensure(port int, wsPath string) int {
 	if h, err := lock.Probe(port); err == nil && h.Name == "harnessd" {
 		fmt.Printf("✅ harnessd ya corriendo (pid %d, v%s) → http://127.0.0.1:%d\n", h.PID, h.Version, port)
 		return 0 // nueve de cada diez llegan aquí, en ~5ms
 	}
-	return run(port, wsPath)
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ no sé quién soy: %v\n", err)
+		return 1
+	}
+	absWS, _ := filepath.Abs(wsPath)
+	logPath := filepath.Join(ident.ConfigDir(), "harnessd.log")
+	_ = os.MkdirAll(ident.ConfigDir(), 0o700)
+	logf, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ log: %v\n", err)
+		return 1
+	}
+	defer logf.Close()
+	cmd := exec.Command(exe, "run", "--port", strconv.Itoa(port), "--workspace", absWS)
+	cmd.Stdout, cmd.Stderr = logf, logf
+	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // sobrevive al cierre de la terminal
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ no pude lanzar: %v\n", err)
+		return 1
+	}
+	pid := cmd.Process.Pid
+	_ = cmd.Process.Release()
+	// esperar a que conteste — o decir POR QUÉ no (el log tiene la razón)
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if h, err := lock.Probe(port); err == nil && h.Name == "harnessd" {
+			fmt.Printf("✅ harnessd arrancado (pid %d, v%s) → http://127.0.0.1:%d\n", h.PID, h.Version, port)
+			fmt.Printf("   logs: %s\n", logPath)
+			return 0
+		}
+	}
+	fmt.Fprintf(os.Stderr, "❌ lancé pid %d pero /health no contestó en 3s — mira %s\n", pid, logPath)
+	return 1
 }
 
 func run(port int, wsPath string) int {

@@ -29,7 +29,7 @@ import (
 const Protocol = 1
 
 // Health es lo que devuelve /health. Sirve para distinguir "nuestro daemon" de
-// "algo más escuchando en 7717" — que en una laptop de dev pasa.
+// "algo más escuchando en 7718" — que en una laptop de dev pasa.
 type Health struct {
 	Name     string `json:"name"`     // siempre "harnessd"
 	Version  string `json:"version"`
