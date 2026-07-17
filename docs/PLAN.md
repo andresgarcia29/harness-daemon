@@ -50,19 +50,33 @@ concurrentes → 1 daemon; `kill -9` → el kernel libera el puerto → cero bas
 
 ---
 
-## Fase 3 — Ingesta (siguiente)
+## Fase 3 — Ingesta ✅ (2026-07-17)
 
-- Driver SQLite (`modernc.org/sqlite`, puro Go — sin cgo, para cross-compilar
-  sin dolor) + migraciones forward-only + backup antes de migrar
-- Tailer de JSONL: offsets `(dev, ino)` para rotación, buffer del último renglón
-  parcial, decoder incremental de UTF-8 (un `read()` parte secuencias multibyte)
-- **Polling, no kqueue/inotify.** El tailer ya hace `fstat` para detectar
-  truncado, así que el polling no cuesta ni una syscall de más: 10 archivos a
-  250ms ≈ 40 fstat/s ≈ 0.004% de un core. kqueue compra 249ms que nadie percibe,
-  a cambio de una rama solo-macOS **más** el fallback de polling que escribirías igual.
-- Adaptador Claude Code: transcripts + `subagents/agent-*.meta.json` (el grafo
-  padre→hijo sale de `toolUseId`/`spawnDepth`; no se infiere)
-- Registro de precios: builtin + sync de LiteLLM + override local
+Implementada en `internal/store` (SQLite `modernc.org/sqlite` puro Go — la
+matriz darwin/linux × arm64/amd64 sigue compilando con `CGO_ENABLED=0`;
+migraciones embebidas forward-only con backup `.bak-<NNN>` antes de aplicar) e
+`internal/collect` (tailer con offsets persistidos + adaptador Claude Code +
+bus). Verificado contra transcripts REALES: 1,299 llamadas / 50 agentes / 3
+modelos ingeridos de 2 sesiones, y un evento del bus emitido en vivo apareció
+en `/api/stats` al siguiente tick.
+
+- Polling a 2s en el loop de `run` (la nota de kqueue de abajo sigue vigente);
+  `/api/stats` expone los conteos — la prueba de vida es que crecen.
+- Las leyes portadas del panel, ahora con test en Go: dedupe por `message_id`
+  (MAX por campo, no suma), `<synthetic>` fuera, reloj del record jamás el
+  nuestro, `ok` string→int normalizado en la ingesta, desglose de caché 5m/1h
+  en columnas SEPARADAS (el panel no distinguía; el esquema sí).
+- `go test ./...`: migración idempotente, dedupe, costo-es-vista (sin precio →
+  NULL; agregar precio re-cotiza el histórico solo), uid de eventos estable,
+  tick completo idempotente (re-ingesta total = mismas filas), tail incremental
+  con línea a medio escribir.
+- El esquema canónico vive ahora en `internal/store/migrations/` (go:embed no
+  alcanza fuera del paquete; dos copias del único archivo caro era divergencia
+  con fecha). `db/migrations/README.md` apunta ahí.
+- **Pendiente de la fase**: registro de precios (builtin + LiteLLM + override) —
+  hoy `prices` está vacía y todo costo es NULL, que es honesto pero inútil para
+  Gastos; rotación `(dev,ino)` fina (hoy: `size < offset` → relee, y los UPSERTs
+  hacen la relectura gratis).
 
 ## Fase 4 — Que el harness cuente lo que decide
 
