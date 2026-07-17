@@ -165,8 +165,23 @@ panel; sin token → 403. Tests Go: guardas (token/Host), task con stub de
 claude, respond --resume, pane-send valida, connect con httptest (401 no
 guarda; 200 guarda 0600), sync de precios con catálogo falso.
 
-Pendiente: adaptadores de archivo (OpenCode serve / Codex / Kimi) para las
-máquinas sin herdr, y el modo nube (Fase 7).
+## herdr como plano de control completo ✅ (2026-07-17)
+
+Ciclo de vida (op/herdr): interrumpir (Ctrl-C), cerrar pane/tab/workspace,
+detener la sesión entera — todo valida el id contra el snapshot y confirma en
+la UI. Respuestas interactivas (op/herdr-key): el panel PARSEA el menú del
+agente del terminal y ofrece botones; las teclas se filtran a un set seguro.
+Abrir (op/herdr-open): workspace, terminal (tab), split de pane. Detección del
+PROGRAMA por pane (process-info → Claude Code/Kimi/Codex/Vertex…), cache 15 s.
+
+El PUENTE herdr↔harness: el snapshot expone workspace{name,path}; el frontend
+enlaza cada pane cuyo cwd está en el workspace (o en worktrees/<tarea>/) con su
+pipeline del bus, y muestra una tira "◈ <ws> · <tarea> · <fase> · <estado>" en
+la ventana del terminal, clic → la tarea. Verificado: un pane en
+worktrees/COR-DEMO/widget mostró IMPLEMENT · TRABAJANDO con su mini-pipeline.
+
+Pendiente: adaptadores de archivo (OpenCode serve / Codex / Kimi) para máquinas
+sin herdr, y el modo nube (Fase 7).
 
 ## Fase 5 — El tablero
 

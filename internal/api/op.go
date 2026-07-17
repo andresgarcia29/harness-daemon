@@ -555,6 +555,8 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 				valid = true
 			}
 		}
+	case "stop-session":
+		valid = true // el nombre de la sesión no vive en el snapshot; herdr valida
 	default:
 		fail(rw, 400, "acción desconocida")
 		return
@@ -574,6 +576,8 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 		err, verb = herdr.CloseTab(id), "cerré el tab"
 	case "close-workspace":
 		err, verb = herdr.CloseWorkspace(id), "cerré el workspace"
+	case "stop-session":
+		err, verb = herdr.SessionStop(id), "detuve la sesión de herdr"
 	}
 	if err != nil {
 		fail(rw, 500, "herdr no aceptó la acción: "+redact.Clip(err.Error(), 120))

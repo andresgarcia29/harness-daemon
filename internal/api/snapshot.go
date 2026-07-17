@@ -107,10 +107,15 @@ type Snapshot struct {
 	Runs        []map[string]any `json:"runs"`
 	Mode        string           `json:"mode"`
 	Op          bool             `json:"op"`
+	Workspace   wsInfo           `json:"workspace"`
 	Toolbox     *Toolbox         `json:"toolbox,omitempty"`
 	Mcp         []McpServer      `json:"mcp"`
 	Herdr       any              `json:"herdr,omitempty"`
 	Warning     string           `json:"warning,omitempty"`
+}
+type wsInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 type pubP struct {
 	Input  float64 `json:"input"`
@@ -136,6 +141,7 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
 		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
+		Workspace: wsInfo{Path: wsPath},
 	}
 	for m, p := range prices {
 		snap.Prices[m] = pubP{Input: p.Input, Output: p.Output}
