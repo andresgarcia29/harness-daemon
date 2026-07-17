@@ -16,8 +16,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andresgarcia29/harness-daemon/internal/collect"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/lock"
+	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
 // Version la inyecta el build: -ldflags "-X main.Version=0.1.0"
@@ -130,16 +132,53 @@ func run(port int, wsPath string) int {
 	}
 	defer ln.Close()
 
+	dbPath := filepath.Join(ident.ConfigDir(), "harness.db")
 	health := lock.Health{
 		Name: "harnessd", Version: Version, Protocol: lock.Protocol,
 		PID: os.Getpid(), Mode: "all-in-one", Started: started.Unix(),
-		DB: filepath.Join(ident.ConfigDir(), "harness.db"),
+		DB: dbPath,
 	}
+
+	// Fase 3: el colector. El almacén abre (y migra) ANTES de anunciar salud:
+	// un daemon que dice "ok" sin poder escribir es un daemon que miente.
+	st, err := store.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ almacén: %v\n", err)
+		return 1
+	}
+	defer st.Close()
+	col := collect.New(st, m, w)
+	collectQuit := make(chan struct{})
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-collectQuit:
+				return
+			case now := <-t.C:
+				_ = col.Tick(now.Unix()) // fail-open: telemetría jamás tumba al daemon
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(rw).Encode(health)
+	})
+	// /api/stats: la prueba de vida del colector es que estos números CRECEN.
+	mux.HandleFunc("/api/stats", func(rw http.ResponseWriter, r *http.Request) {
+		counts, err := st.Counts()
+		rw.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			rw.WriteHeader(500)
+			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(map[string]any{
+			"rows": counts, "workspace": w.Name, "db": dbPath,
+		})
 	})
 	quit := make(chan struct{})
 	mux.HandleFunc("/admin/quit", func(rw http.ResponseWriter, r *http.Request) {
@@ -171,6 +210,7 @@ func run(port int, wsPath string) int {
 	case <-sig:
 	case <-quit:
 	}
+	close(collectQuit)
 	fmt.Println("\n👋 harnessd fuera. No tocó nada.")
 	return 0
 }
