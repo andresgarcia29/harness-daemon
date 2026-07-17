@@ -22,7 +22,8 @@ var mimes = map[string]string{
 
 // Handler sirve el build. index.html en "/", y /assets/* directo. Fuera de
 // dist/ → 404 (el embed ya lo garantiza: no hay ".." que escape).
-func Handler() http.Handler {
+// opToken se inyecta en el HTML (plano de operar, ADR-0010).
+func Handler(opToken string) http.Handler {
 	sub, _ := fs.Sub(dist, "dist")
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(r.URL.Path, "/")
@@ -44,10 +45,8 @@ func Handler() http.Handler {
 		}
 		rw.Header().Set("Content-Type", ct)
 		rw.Header().Set("Cache-Control", "no-store")
-		// El daemon es solo-lectura: no hay token de operar que inyectar. El
-		// frontend esconde "Operar" cuando el snapshot trae op:false.
 		if ext == ".html" {
-			b = []byte(strings.ReplaceAll(string(b), "__OP_TOKEN__", ""))
+			b = []byte(strings.ReplaceAll(string(b), "__OP_TOKEN__", opToken))
 		}
 		_, _ = rw.Write(b)
 	})

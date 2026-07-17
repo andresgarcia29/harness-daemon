@@ -193,6 +193,15 @@ func run(port int, wsPath string) int {
 	}
 	defer st.Close()
 	_ = st.SeedBuiltinPrices() // no pisa ediciones del usuario; sin esto todo costo es NULL
+	op := api.NewOp(w.Path, w.ID, st.DB, port)
+	// precios de modelos observados sin precio: sync automático al arranque
+	// (fail-open, en background — sin red simplemente no pasa nada)
+	go func() {
+		time.Sleep(8 * time.Second) // deja que el colector observe modelos primero
+		if added, _, err := api.SyncPrices(st.DB); err == nil && len(added) > 0 {
+			fmt.Printf("   precios sincronizados desde OpenRouter: %v\n", added)
+		}
+	}()
 	col := collect.New(st, m, w)
 	collectQuit := make(chan struct{})
 	go func() {
@@ -238,6 +247,8 @@ func run(port int, wsPath string) int {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		snap.Herdr = herdr.Snapshot()
+		snap.Connections = api.Connections()
 		_ = json.NewEncoder(rw).Encode(snap)
 	})
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
@@ -258,6 +269,8 @@ func run(port int, wsPath string) int {
 			if err != nil {
 				return true
 			}
+			snap.Herdr = herdr.Snapshot()
+			snap.Connections = api.Connections()
 			b, _ := json.Marshal(snap)
 			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
 				return false
@@ -305,6 +318,16 @@ func run(port int, wsPath string) int {
 		rw.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(rw).Encode(herdr.Snapshot())
 	})
+	// El plano de OPERAR (ADR-0010) — crear trabajo, jamás merges.
+	mux.HandleFunc("/api/op/task", op.OpTask)
+	mux.HandleFunc("/api/op/respond", op.OpRespond)
+	mux.HandleFunc("/api/op/pane-send", op.OpPaneSend)
+	mux.HandleFunc("/api/op/connect", op.OpConnect)
+	mux.HandleFunc("/api/op/sync-prices", op.OpSyncPrices)
+	mux.HandleFunc("/api/db", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(api.DBInfo(st.DB, dbPath))
+	})
 	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		txt, err := herdr.PaneRead(r.URL.Query().Get("id"), 60)
@@ -317,7 +340,7 @@ func run(port int, wsPath string) int {
 
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
 	// /api ni /health ni /admin.
-	web := webui.Handler()
+	web := webui.Handler(op.Token)
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) { web.ServeHTTP(rw, r) })
 
 	quit := make(chan struct{})

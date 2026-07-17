@@ -157,3 +157,10 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// PaneSend escribe texto + Enter en un pane (herdr pane run) — así se contesta
+// a un agente interactivo. El caller DEBE validar pane_id contra el snapshot.
+func PaneSend(paneID, text string) error {
+	_, err := run(5*time.Second, "pane", "run", paneID, text)
+	return err
+}

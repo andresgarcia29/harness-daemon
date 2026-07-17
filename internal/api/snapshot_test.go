@@ -65,8 +65,8 @@ func TestBuildSnapshot(t *testing.T) {
 	if ss.Peak != 2 {
 		t.Fatalf("pico = %d, quiero 2 (dos agentes solapados en el tiempo)", ss.Peak)
 	}
-	if snap.Op {
-		t.Fatal("el daemon debe reportar op:false (solo lectura)")
+	if !snap.Op {
+		t.Fatal("el daemon debe reportar op:true (el plano de operar vive aquí ahora)")
 	}
 	// costo total: main (3+15) + a1 (3) = 21
 	if snap.Cost == nil || *snap.Cost < 20.9 || *snap.Cost > 21.1 {
