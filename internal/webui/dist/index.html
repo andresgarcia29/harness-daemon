@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>corvux · panel</title>
+    <!-- server.py reemplaza __OP_TOKEN__ al servir: token anti-CSRF por
+         arranque (ADR-0010). Un build estático jamás trae el token real. -->
+    <script>window.__OP="__OP_TOKEN__";</script>
+    <script>
+      // tema antes del primer paint (sin flash): dark por defecto
+      const t = localStorage.getItem("corvux-theme") || "dark";
+      if (t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches))
+        document.documentElement.classList.add("dark");
+    </script>
+    <script type="module" crossorigin src="./assets/index-DzWdyx5k.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-B2vgKhSj.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

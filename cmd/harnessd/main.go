@@ -18,10 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andresgarcia29/harness-daemon/internal/api"
 	"github.com/andresgarcia29/harness-daemon/internal/collect"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/lock"
 	"github.com/andresgarcia29/harness-daemon/internal/store"
+	"github.com/andresgarcia29/harness-daemon/internal/webui"
 )
 
 // Version la inyecta el build: -ldflags "-X main.Version=0.1.0"
@@ -224,6 +226,63 @@ func run(port int, wsPath string) int {
 			"rows": counts, "costs": costs, "workspace": w.Name, "db": dbPath,
 		})
 	})
+	// Fase 1: el daemon ES el backend del panel. Sirve el snapshot (leído del
+	// SQLite) y el build de React embebido. Un proceso, todos los workspaces.
+	mux.HandleFunc("/api/state", func(rw http.ResponseWriter, r *http.Request) {
+		snap, err := api.Build(st.DB, w.ID, time.Now().Unix())
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Header().Set("Cache-Control", "no-store")
+		if err != nil {
+			rw.WriteHeader(500)
+			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(snap)
+	})
+	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
+	// colector ya escribe cada 2 s; aquí re-emitimos el snapshot al mismo ritmo.
+	mux.HandleFunc("/api/stream", func(rw http.ResponseWriter, r *http.Request) {
+		fl, ok := rw.(http.Flusher)
+		if !ok {
+			http.Error(rw, "sin streaming", http.StatusInternalServerError)
+			return
+		}
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.Header().Set("Cache-Control", "no-store")
+		rw.Header().Set("Connection", "keep-alive")
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		send := func() bool {
+			snap, err := api.Build(st.DB, w.ID, time.Now().Unix())
+			if err != nil {
+				return true
+			}
+			b, _ := json.Marshal(snap)
+			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
+				return false
+			}
+			fl.Flush()
+			return true
+		}
+		if !send() {
+			return
+		}
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-t.C:
+				if !send() {
+					return
+				}
+			}
+		}
+	})
+	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
+	// /api ni /health ni /admin.
+	web := webui.Handler()
+	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) { web.ServeHTTP(rw, r) })
+
 	quit := make(chan struct{})
 	mux.HandleFunc("/admin/quit", func(rw http.ResponseWriter, r *http.Request) {
 		// Solo 127.0.0.1 (el listener ya lo garantiza), y solo POST: un GET
