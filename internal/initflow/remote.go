@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andresgarcia29/harness-daemon/internal/api"
 	"github.com/andresgarcia29/harness-daemon/internal/gen"
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 )
@@ -274,16 +275,37 @@ func (m *Manager) remoteClone(ws, mode string, sel []RepoSel) error {
 		return errors.New("no hay repos seleccionados")
 	}
 	parts := make([]string, 0, len(sel))
-	for _, r := range sel {
+	idxOf := map[string]int{}
+	for i, r := range sel {
 		p := r.FullName
 		if r.Ref != "" {
 			p += "@" + r.Ref
 		}
 		parts = append(parts, p)
+		idxOf[r.FullName] = i
 	}
-	out, err := m.remoteHarness("clone",
-		[]string{"init-step", "clone", "--workspace", ws, "--source", mode, "--repos", strings.Join(parts, ","), "--json"},
-		nil, 30*time.Minute)
+	sshDest, err := m.sshTarget()
+	if err != nil {
+		return err
+	}
+	argv := []string{"harness", "init-step", "clone", "--workspace", ws, "--source", mode, "--repos", strings.Join(parts, ","), "--json"}
+	// stderr trae DOS canales: líneas @@repo|… (progreso estructurado → los
+	// checks por repo se prenden EN VIVO) y el resto (progreso humano → log).
+	out, err := herdr.Exec(sshDest, argv, nil, 30*time.Minute, func(l string) {
+		if rest, ok := strings.CutPrefix(l, "@@repo|"); ok {
+			f := strings.SplitN(rest, "|", 3)
+			if len(f) == 3 {
+				if i, ok := idxOf[f[0]]; ok {
+					m.setRepoStatus(i, Status(f[1]), f[2])
+				}
+			}
+			return
+		}
+		if sshNoise(l) {
+			return
+		}
+		m.logs.Append("clone", l)
+	})
 	var res struct {
 		Repos []RepoSel `json:"repos"`
 		Fails int       `json:"fails"`
@@ -411,6 +433,16 @@ func (m *Manager) remoteFinish(ws string) error {
 		[]string{"init-step", "finish", "--workspace", ws}, nil, 10*time.Minute)
 	if err != nil {
 		return fmt.Errorf("el doctor en el VPS reporta fallos: %w", err)
+	}
+	// el target del panel apunta ahora al workspace recién nacido: el
+	// selector de máquina trae sus tareas/sesiones/costo sin configurar nada
+	m.mu.Lock()
+	name := m.st.Target
+	m.mu.Unlock()
+	if sshDest, err := m.sshTarget(); err == nil {
+		if err := api.AddTarget(name, sshDest, ws); err == nil {
+			m.logs.Append("finish", "✓ target «"+name+"» apunta al workspace nuevo — el selector de máquina ya lo observa")
+		}
 	}
 	return nil
 }

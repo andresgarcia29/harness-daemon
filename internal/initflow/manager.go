@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/gen"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
@@ -44,6 +45,7 @@ func New(version string, adopt func(string) error) *Manager {
 			Current: "workspace", Steps: freshSteps()}
 		m.persistLocked()
 	}
+	m.reviveZombies()
 	if m.st.Workspace != "" && m.st.Target == "" {
 		if err := adopt(m.st.Workspace); err != nil {
 			m.setStepLocked("workspace", Fail, "", "no pude re-adoptar el workspace: "+err.Error())
@@ -78,8 +80,30 @@ func Attach(version, ws string, adopt func(string) error) *Manager {
 		return nil
 	}
 	m := &Manager{version: version, adopt: adopt, logs: NewLogBuffer(), st: st}
+	m.reviveZombies()
 	m.loadInventory()
 	return m
+}
+
+// reviveZombies — un paso "running" en el estado persistido es MENTIRA tras
+// un reinicio: el goroutine que lo corría murió con el proceso. Sin esto, el
+// botón queda con spinner eterno y sin retry (el bug del "nunca paró").
+func (m *Manager) reviveZombies() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	for i := range m.st.Steps {
+		if m.st.Steps[i].Status == Running {
+			m.st.Steps[i].Status = Fail
+			m.st.Steps[i].Error = "interrumpido por un reinicio del daemon — reintenta"
+			m.st.Steps[i].Started = 0
+			changed = true
+		}
+	}
+	if changed {
+		m.advanceLocked()
+		m.persistLocked()
+	}
 }
 
 // ── persistencia ──
@@ -249,6 +273,8 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 		return m.handleMcpSecret(body)
 	case "probe-mcp":
 		return m.handleProbeInit(body)
+	case "probe-all":
+		return m.handleProbeAll(body)
 	case "step":
 		return m.handleStep(body)
 	default:
@@ -505,6 +531,7 @@ func (m *Manager) handleStep(body map[string]any) (any, int) {
 		if i := m.stepIdx(id); i >= 0 {
 			m.st.Steps[i].Status = Running
 			m.st.Steps[i].Error = ""
+			m.st.Steps[i].Started = time.Now().Unix()
 		}
 		m.persistLocked()
 		m.mu.Unlock()
@@ -512,6 +539,9 @@ func (m *Manager) handleStep(body map[string]any) (any, int) {
 			err := r(m)
 			m.mu.Lock()
 			m.running = false
+			if i := m.stepIdx(id); i >= 0 {
+				m.st.Steps[i].Started = 0
+			}
 			if err != nil {
 				m.logs.Append(id, "❌ "+err.Error())
 				m.setStepLocked(id, Fail, "", err.Error())

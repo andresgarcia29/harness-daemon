@@ -1,0 +1,137 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// ── los DRAFT: la ley que la arqueología propuso y nadie ha firmado ──
+// La constitución de un abogado en DRAFT es la primera parada de /auto:
+// litigar citando ley sin firmar es teatro. Este plano lista los borradores
+// y deja RATIFICARLOS desde el panel — el acto humano que los vuelve ley.
+
+type DraftDoc struct {
+	Path  string `json:"path"`  // relativo al workspace
+	Kind  string `json:"kind"`  // abogado | constitution | spec | map
+	Title string `json:"title"` // legible
+}
+
+// draftGlobs — dónde puede vivir un DRAFT (lista cerrada: jamás ship.sh,
+// hooks ni settings — la ley del operador de ADR-0010 sigue intacta).
+func draftCandidates(ws string) []DraftDoc {
+	var out []DraftDoc
+	add := func(rel, kind, title string) {
+		out = append(out, DraftDoc{Path: rel, Kind: kind, Title: title})
+	}
+	if m, _ := filepath.Glob(filepath.Join(ws, ".claude", "agents", "*.md")); m != nil {
+		for _, p := range m {
+			name := strings.TrimSuffix(filepath.Base(p), ".md")
+			add(filepath.Join(".claude", "agents", filepath.Base(p)), "abogado", "Constitución de "+name)
+		}
+	}
+	add(filepath.Join("docs", "constitution.md"), "constitution", "Constitución del proyecto")
+	add(filepath.Join("docs", "architecture", "map.md"), "map", "Mapa de ownership")
+	if m, _ := filepath.Glob(filepath.Join(ws, "specs", "*", "spec.md")); m != nil {
+		for _, p := range m {
+			dom := filepath.Base(filepath.Dir(p))
+			add(filepath.Join("specs", dom, "spec.md"), "spec", "Spec de "+dom)
+		}
+	}
+	return out
+}
+
+// ListDrafts — los documentos que HOY están en status: DRAFT.
+func ListDrafts(ws string) []DraftDoc {
+	if ws == "" {
+		return nil
+	}
+	var out []DraftDoc
+	for _, c := range draftCandidates(ws) {
+		if isDraft(filepath.Join(ws, c.Path)) {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+func isDraft(abs string) bool {
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return false
+	}
+	head := b
+	if len(head) > 2048 {
+		head = head[:2048]
+	}
+	return strings.Contains(string(head), "status: DRAFT")
+}
+
+// OpRatify — ratifica UN draft ({path}) o todos ({all:true}). Solo archivos
+// de la lista cerrada de candidatos y solo el flip DRAFT→RATIFIED: el
+// operador firma la ley, jamás la reescribe (ADR-0010 intacto).
+func (o *Op) OpRatify(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	if o.WS == "" {
+		fail(rw, 409, "workspace no fijado")
+		return
+	}
+	var done, failed []string
+	if v, _ := b["all"].(bool); v {
+		for _, d := range ListDrafts(o.WS) {
+			if err := RatifyDoc(o.WS, d.Path); err != nil {
+				failed = append(failed, d.Path+": "+err.Error())
+			} else {
+				done = append(done, d.Path)
+			}
+		}
+	} else {
+		p := s(b, "path")
+		if err := RatifyDoc(o.WS, p); err != nil {
+			fail(rw, 400, err.Error())
+			return
+		}
+		done = append(done, p)
+	}
+	for _, p := range done {
+		o.emit("decision", "el humano ratificó "+p, "")
+	}
+	writeJSON(rw, 200, map[string]any{"ok": len(failed) == 0, "ratified": done, "failed": failed,
+		"drafts": ListDrafts(o.WS)})
+}
+
+func RatifyDoc(ws, rel string) error {
+	found := false
+	for _, c := range draftCandidates(ws) {
+		if c.Path == rel {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("ese archivo no es un documento ratificable")
+	}
+	abs := filepath.Join(ws, rel)
+	b, err := os.ReadFile(abs)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(b), "status: DRAFT") {
+		return fmt.Errorf("%s ya no está en DRAFT", rel)
+	}
+	out := strings.Replace(string(b), "status: DRAFT", "status: RATIFIED", 1)
+	// limpia el banner de advertencia si sigue en la misma línea
+	out = strings.ReplaceAll(out, "status: RATIFIED   # ⚠️ ratificar por humano", "status: RATIFIED  # firmado desde el panel")
+	fi, _ := os.Stat(abs)
+	mode := os.FileMode(0o644)
+	if fi != nil {
+		mode = fi.Mode()
+	}
+	return os.WriteFile(abs, []byte(out), mode)
+}
