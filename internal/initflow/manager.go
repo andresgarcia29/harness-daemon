@@ -40,7 +40,10 @@ func (m *Manager) SetTargetResolver(f func(string) (string, bool)) { m.resolveTa
 func New(version string, adopt func(string) error) *Manager {
 	m := &Manager{version: version, adopt: adopt, logs: NewLogBuffer()}
 	m.st = loadState()
-	if !m.st.Active {
+	// Un init TERMINADO se conserva (la pantalla final + "nueva instalación"
+	// explícita), no se pisa con uno fresco en silencio: pisar el registro de
+	// la instalación remota dejaba al panel sin saber a dónde apuntar.
+	if !m.st.Active && m.st.CompletedAt == 0 {
 		m.st = State{Version: schemaVersion, HarnessVersion: version, Active: true,
 			Current: "workspace", Steps: freshSteps()}
 		m.persistLocked()
@@ -235,7 +238,17 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 	done := !m.st.Active
 	m.mu.Unlock()
 	if done {
-		// el init terminó: el plano se apaga (ADR-0011) — 410 Gone
+		// el init terminó: el plano se apaga (ADR-0011) — 410 Gone. La ÚNICA
+		// excepción es arrancar OTRA instalación, explícita.
+		if action == "restart" {
+			m.mu.Lock()
+			m.st = State{Version: schemaVersion, HarnessVersion: m.version, Active: true,
+				Current: "workspace", Steps: freshSteps()}
+			m.inv = nil
+			m.persistLocked()
+			m.mu.Unlock()
+			return map[string]any{"ok": true}, 200
+		}
 		return map[string]any{"ok": false, "error": "el init terminó — el panel normal es tu casa ahora"}, 410
 	}
 	switch action {

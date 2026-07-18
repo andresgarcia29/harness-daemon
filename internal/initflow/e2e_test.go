@@ -105,8 +105,21 @@ func TestE2EResumeCompleto(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(ws, ".harness-version")); string(b) != "9.9.9-e2e\n" {
 		t.Fatalf(".harness-version: %q", b)
 	}
-	// re-iniciar sobre un ws terminado se rechaza con guía
+	// un manager nuevo CONSERVA el init terminado (no lo pisa con uno fresco)
 	m2 := New("9.9.9-e2e", spy.fn)
+	if p := m2.Public(); p.Active || p.CompletedAt == 0 {
+		t.Fatalf("el init terminado se conserva: %+v", p)
+	}
+	if _, code := m2.Handle("workspace", map[string]any{"path": ws}); code != 410 {
+		t.Fatal("init terminado → 410 salvo restart")
+	}
+	// restart explícito → wizard fresco; el ws YA instalado se rechaza con guía
+	if _, code := m2.Handle("restart", map[string]any{}); code != 200 {
+		t.Fatal("restart")
+	}
+	if p := m2.Public(); !p.Active || p.Step != "workspace" {
+		t.Fatalf("tras restart: %+v", p)
+	}
 	if _, code := m2.Handle("workspace", map[string]any{"path": ws}); code != 409 {
 		t.Fatal("workspace ya inicializado → 409 con guía")
 	}
