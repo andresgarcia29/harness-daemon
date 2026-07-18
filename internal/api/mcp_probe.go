@@ -1,0 +1,229 @@
+package api
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/andresgarcia29/harness-daemon/internal/redact"
+)
+
+// Sonda MCP: la ÚNICA prueba honesta de "funciona" es lanzar el servidor y
+// hablarle su protocolo (JSON-RPC initialize + tools/list). herdr sólo hace
+// checks estáticos; esto confirma que arranca, contesta, y qué tools expone.
+// Cachea el último resultado por servidor para que el snapshot lo re-adjunte.
+
+var (
+	mcpProbeMu    sync.Mutex
+	mcpProbeCache = map[string]McpProbe{}
+)
+
+func mcpProbeGet(name string) *McpProbe {
+	mcpProbeMu.Lock()
+	defer mcpProbeMu.Unlock()
+	if p, ok := mcpProbeCache[name]; ok {
+		return &p
+	}
+	return nil
+}
+
+func mcpProbeSet(name string, p McpProbe) {
+	mcpProbeMu.Lock()
+	mcpProbeCache[name] = p
+	mcpProbeMu.Unlock()
+}
+
+const (
+	mcpInit        = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"harness-daemon","version":"1"}}}` + "\n"
+	mcpInitialized = `{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"
+	mcpToolsList   = `{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n"
+)
+
+type mcpConf struct {
+	Command string
+	Args    []string
+	Env     map[string]string
+}
+
+func readMcpConfig(ws string) map[string]mcpConf {
+	out := map[string]mcpConf{}
+	b, err := os.ReadFile(filepath.Join(ws, ".mcp.json"))
+	if err != nil {
+		return out
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			Env     map[string]string `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return out
+	}
+	for n, sv := range cfg.Servers {
+		out[n] = mcpConf{Command: sv.Command, Args: sv.Args, Env: sv.Env}
+	}
+	return out
+}
+
+// OpProbeMcp sondea TODOS los MCP de <ws>/.mcp.json en paralelo (cap 4).
+func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
+	if _, ok := o.Guard(rw, r); !ok {
+		return
+	}
+	servers := readMcpConfig(o.WS)
+	out := map[string]McpProbe{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for name, sv := range servers {
+		wg.Add(1)
+		go func(name string, sv mcpConf) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			p := probeMcpServer(o.WS, sv)
+			mcpProbeSet(name, p)
+			mu.Lock()
+			out[name] = p
+			mu.Unlock()
+		}(name, sv)
+	}
+	wg.Wait()
+	o.emit("decision", "el humano sondeó los MCP desde el panel", "")
+	writeJSON(rw, 200, map[string]any{"ok": true, "probed": out})
+}
+
+// probeMcpServer arranca un servidor MCP y le habla el protocolo. Docker o
+// binario da igual: ambos hablan JSON-RPC por stdio.
+func probeMcpServer(ws string, sv mcpConf) McpProbe {
+	start := time.Now()
+	p := McpProbe{At: time.Now().UTC().Format(time.RFC3339)}
+	cmd := sv.Command
+	if !filepath.IsAbs(cmd) && strings.Contains(cmd, "/") {
+		cmd = filepath.Join(ws, cmd) // with-secrets.sh y relativos, respecto al ws
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	c := exec.CommandContext(ctx, cmd, sv.Args...)
+	c.Dir = ws
+	c.Env = os.Environ()
+	for k, v := range sv.Env {
+		c.Env = append(c.Env, k+"="+v)
+	}
+	stdin, e1 := c.StdinPipe()
+	stdout, e2 := c.StdoutPipe()
+	var errbuf strings.Builder
+	c.Stderr = &errbuf
+	if e1 != nil || e2 != nil {
+		p.Error, p.Ms = "no pude abrir los pipes", ms(start)
+		return p
+	}
+	if err := c.Start(); err != nil {
+		p.Error, p.Ms = redact.String(redact.Clip(err.Error(), 160)), ms(start)
+		return p
+	}
+	go func() {
+		_, _ = io.WriteString(stdin, mcpInit)
+		_, _ = io.WriteString(stdin, mcpInitialized)
+		_, _ = io.WriteString(stdin, mcpToolsList)
+		_ = stdin.Close()
+	}()
+	done := make(chan struct{})
+	var lines []string
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		for sc.Scan() {
+			lines = append(lines, sc.Text())
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		_ = c.Process.Kill()
+		<-done // el proceso muere → stdout EOF → el lector termina
+	}
+	_ = c.Wait()
+	p.Ms = ms(start)
+	parseMcpResponses(&p, lines)
+	if !p.OK {
+		se := strings.ToLower(errbuf.String())
+		if ctx.Err() != nil && p.Error == "" {
+			p.Error = "no contestó en 12s (npx/uvx/docker pueden tardar la 1ª vez — reintenta)"
+		}
+		if p.Error == "" {
+			tail := errbuf.String()
+			if len(tail) > 240 {
+				tail = tail[len(tail)-240:]
+			}
+			p.Error = redact.String(strings.TrimSpace(tail))
+			if p.Error == "" {
+				p.Error = "arrancó pero no contestó el initialize"
+			}
+		}
+		for _, kw := range []string{"auth", "401", "403", "token", "credential", "apikey", "api key", "unauthor", "permission denied"} {
+			if strings.Contains(se, kw) {
+				p.AuthHint = true
+				break
+			}
+		}
+	}
+	return p
+}
+
+func parseMcpResponses(p *McpProbe, lines []string) {
+	for _, ln := range lines {
+		var rec struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal([]byte(ln), &rec) != nil {
+			continue
+		}
+		switch strings.Trim(string(rec.ID), `"`) {
+		case "1":
+			if len(rec.Error) > 0 {
+				p.Error = "el servidor rechazó initialize"
+				continue
+			}
+			var res struct {
+				ServerInfo struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+				} `json:"serverInfo"`
+			}
+			_ = json.Unmarshal(rec.Result, &res)
+			p.OK = true
+			p.Server, p.Version = res.ServerInfo.Name, res.ServerInfo.Version
+		case "2":
+			if len(rec.Result) == 0 {
+				continue
+			}
+			var res struct {
+				Tools []struct {
+					Name string `json:"name"`
+				} `json:"tools"`
+			}
+			_ = json.Unmarshal(rec.Result, &res)
+			for _, t := range res.Tools {
+				if t.Name != "" {
+					p.Tools = append(p.Tools, t.Name)
+				}
+			}
+		}
+	}
+}
+
+func ms(t time.Time) int64 { return time.Since(t).Milliseconds() }
