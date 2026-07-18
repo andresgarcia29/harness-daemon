@@ -153,25 +153,44 @@ func probeMcpServer(ws string, sv mcpConf) McpProbe {
 		p.Error, p.Ms = redact.String(redact.Clip(err.Error(), 160)), ms(start)
 		return p
 	}
+	// stdin se queda ABIERTO hasta tener las respuestas: hay servers (el de
+	// GitHub) que tratan el EOF de stdin como shutdown y mueren sin contestar
+	// si lo cierras al escribir — el bug clásico del probe impaciente.
 	go func() {
 		_, _ = io.WriteString(stdin, mcpInit)
 		_, _ = io.WriteString(stdin, mcpInitialized)
 		_, _ = io.WriteString(stdin, mcpToolsList)
-		_ = stdin.Close()
 	}()
 	done := make(chan struct{})
+	gotAll := make(chan struct{})
+	var linesMu sync.Mutex
 	var lines []string
 	go func() {
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		answered := false
 		for sc.Scan() {
-			lines = append(lines, sc.Text())
+			line := sc.Text()
+			linesMu.Lock()
+			lines = append(lines, line)
+			linesMu.Unlock()
+			// la respuesta a tools/list (id 2) = ya tenemos todo
+			if !answered && (strings.Contains(line, `"id":2`) || strings.Contains(line, `"id": 2`)) {
+				answered = true
+				close(gotAll)
+			}
 		}
 		close(done)
 	}()
 	select {
+	case <-gotAll:
+		// respuestas completas: ahora sí, adiós (stdin cerrado + kill)
+		_ = stdin.Close()
+		_ = c.Process.Kill()
+		<-done
 	case <-done:
 	case <-ctx.Done():
+		_ = stdin.Close()
 		_ = c.Process.Kill()
 		<-done // el proceso muere → stdout EOF → el lector termina
 	}
