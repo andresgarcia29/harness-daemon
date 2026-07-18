@@ -53,7 +53,20 @@ type McpServer struct {
 	BinOK     bool      `json:"bin_ok"`
 	SecretsOK *bool     `json:"secrets_ok"`
 	Env       []string  `json:"env"`
-	Probe     *struct{} `json:"probe"` // la sonda viva es OPERAR: el daemon no la corre
+	Probe     *McpProbe `json:"probe"` // la sonda viva (OPERAR): se llena al "Probar"
+}
+
+// McpProbe: resultado del handshake JSON-RPC real contra un servidor MCP.
+// "funciona" = arrancó y contestó initialize; tools = lo que expone de verdad.
+type McpProbe struct {
+	OK       bool     `json:"ok"`
+	Ms       int64    `json:"ms"`
+	Server   string   `json:"server,omitempty"`
+	Version  string   `json:"version,omitempty"`
+	Error    string   `json:"error,omitempty"`
+	AuthHint bool     `json:"auth_hint,omitempty"`
+	At       string   `json:"at,omitempty"`
+	Tools    []string `json:"tools,omitempty"`
 }
 
 // frontmatter YAML simple: description / argument-hint / name.
@@ -247,7 +260,7 @@ func BuildMcp(ws string) []McpServer {
 			args = args[:6]
 		}
 		out = append(out, McpServer{Name: n, Command: sv.Command, Args: args,
-			Wrapped: wrapped, BinOK: binOK, SecretsOK: secretsOK, Env: env})
+			Wrapped: wrapped, BinOK: binOK, SecretsOK: secretsOK, Env: env, Probe: mcpProbeGet(n)})
 	}
 	return out
 }
