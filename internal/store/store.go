@@ -157,6 +157,7 @@ func (s *Store) SetSessionCwd(id, cwd string) error {
 	return err
 }
 
+
 func (s *Store) UpsertAgent(sessionID, agentID, parent, typ, desc string, depth int, started, now int64) error {
 	var parentVal any
 	if parent != "" {

@@ -99,26 +99,27 @@ type price struct {
 
 // Snapshot es el objeto que /api/state y /api/stream devuelven.
 type Snapshot struct {
-	TS          int64            `json:"ts"`
-	Sessions    []session        `json:"sessions"`
-	Events      []event          `json:"events"`
-	Tasks       []task           `json:"tasks"`
-	Tokens      tokens           `json:"tokens"`
-	Cost        *float64         `json:"cost"`
-	Days        []dayCost        `json:"days"`
-	Models      []modelCost      `json:"models"`
-	Prices      map[string]pubP  `json:"prices"`
-	Unpriced    []string         `json:"unpriced"`
-	Connections map[string]bool  `json:"connections"`
-	Runs        []map[string]any `json:"runs"`
-	Mode        string           `json:"mode"`
-	Op          bool             `json:"op"`
-	Workspace   wsInfo           `json:"workspace"`
-	Toolbox     *Toolbox         `json:"toolbox,omitempty"`
-	Mcp         []McpServer      `json:"mcp"`
-	Herdr       any              `json:"herdr,omitempty"`
-	Targets     []Target         `json:"targets"` // máquinas remotas (VPS) por SSH
-	Warning     string           `json:"warning,omitempty"`
+	TS            int64            `json:"ts"`
+	Sessions      []session        `json:"sessions"`
+	Events        []event          `json:"events"`
+	Tasks         []task           `json:"tasks"`
+	Tokens        tokens           `json:"tokens"`
+	Cost          *float64         `json:"cost"`
+	Days          []dayCost        `json:"days"`
+	Models        []modelCost      `json:"models"`
+	Prices        map[string]pubP  `json:"prices"`
+	Unpriced      []string         `json:"unpriced"`
+	Connections   map[string]bool  `json:"connections"`
+	Runs          []map[string]any `json:"runs"`
+	Mode          string           `json:"mode"`
+	Op            bool             `json:"op"`
+	Workspace     wsInfo           `json:"workspace"`
+	Toolbox       *Toolbox         `json:"toolbox,omitempty"`
+	Mcp           []McpServer      `json:"mcp"`
+	Herdr         any              `json:"herdr,omitempty"`
+	Targets       []Target         `json:"targets"`        // máquinas remotas (VPS) por SSH
+	ArchivedTasks []string         `json:"archived_tasks"` // tareas ocultas (el bus las revive si no se excluyen)
+	Warning       string           `json:"warning,omitempty"`
 }
 type wsInfo struct {
 	Name string `json:"name"`
@@ -148,7 +149,7 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
 		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
-		Workspace: wsInfo{Path: wsPath},
+		Workspace: wsInfo{Path: wsPath}, ArchivedTasks: []string{},
 	}
 	for m, p := range prices {
 		snap.Prices[m] = pubP{Input: p.Input, Output: p.Output}
@@ -238,7 +239,7 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 	rows.Close()
 
 	// ── sesiones + agentes ──
-	sr, err := db.Query(`SELECT id, last_seen, cwd FROM sessions WHERE workspace_id = ? ORDER BY last_seen DESC`, workspaceID)
+	sr, err := db.Query(`SELECT id, last_seen, cwd FROM sessions WHERE workspace_id = ? AND archived = 0 ORDER BY last_seen DESC`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +365,7 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 
 	// ── tareas ──
 	tr, err := db.Query(`SELECT id, COALESCE(title,''), COALESCE(origin,''), COALESCE(phase,'')
-		FROM tasks WHERE workspace_id = ? ORDER BY last_seen DESC`, workspaceID)
+		FROM tasks WHERE workspace_id = ? AND archived = 0 ORDER BY last_seen DESC`, workspaceID)
 	if err == nil {
 		for tr.Next() {
 			var id, title, origin, phase string
@@ -376,6 +377,17 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 			}
 		}
 		tr.Close()
+	}
+	// ids de tareas archivadas: el frontend las excluye de la unión con los
+	// eventos del bus (que si no, las revivirían en la lista).
+	if ar, e := db.Query(`SELECT id FROM tasks WHERE workspace_id = ? AND archived = 1`, workspaceID); e == nil {
+		for ar.Next() {
+			var id string
+			if ar.Scan(&id) == nil {
+				snap.ArchivedTasks = append(snap.ArchivedTasks, id)
+			}
+		}
+		ar.Close()
 	}
 
 	// ── días, modelos, totales ──
