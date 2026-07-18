@@ -12,7 +12,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,35 +84,110 @@ type Session struct {
 	Dir     string `json:"dir,omitempty"`
 }
 
-func run(timeout time.Duration, args ...string) ([]byte, error) {
+// Client apunta el adapter a UNA máquina. target vacío = local (corre `herdr`
+// directo). target no vacío = un destino SSH (alias de ~/.ssh/config o
+// user@host): corre `ssh <target> herdr …` — así el panel local ve y opera el
+// herdr de un VPS. La autenticación la maneja OpenSSH (llaves/agente): el daemon
+// NUNCA toca credenciales. BatchMode=yes → si no hay llave, falla rápido, no
+// cuelga pidiendo password.
+type Client struct{ target string }
+
+// Remote devuelve un Client hacia un destino ("" = local). El caller DEBE haber
+// validado el target contra la lista de destinos guardados (ver api/targets).
+func Remote(target string) Client { return Client{target: strings.TrimSpace(target)} }
+
+// Local es el cliente de esta máquina (retrocompatibilidad).
+func Local() Client { return Client{} }
+
+// sshBase son las opciones de ssh: sin password, timeout corto, y ControlMaster
+// para reusar UNA conexión autenticada (el snapshot corre cada 2s — sin esto
+// pagaríamos un handshake SSH cada vez).
+func sshBase() []string {
+	return []string{
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=6",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPath=" + filepath.Join(os.TempDir(), "harness-ssh-%r@%h:%p"),
+		"-o", "ControlPersist=30s",
+	}
+}
+
+// shQuote envuelve un argumento en comillas simples POSIX (escapando las '),
+// para que el shell REMOTO no interprete nada (`;`, `$()`, espacios). Es el
+// blindaje contra inyección al mandar texto/teclas a un herdr remoto.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func shJoin(args []string) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = shQuote(a)
+	}
+	return strings.Join(parts, " ")
+}
+
+// run ejecuta un subcomando de herdr en el destino del Client. Local = exec
+// directo (args como argv, sin shell). Remoto = ssh con el comando ya quoteado.
+func (c Client) run(timeout time.Duration, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return exec.CommandContext(ctx, "herdr", args...).Output()
+	if c.target == "" {
+		return exec.CommandContext(ctx, "herdr", args...).Output()
+	}
+	remote := "herdr " + shJoin(args)
+	sshArgs := append(sshBase(), c.target, remote)
+	return exec.CommandContext(ctx, "ssh", sshArgs...).Output()
+}
+
+// run local (retrocompatibilidad con los helpers que no son target-aware).
+func run(timeout time.Duration, args ...string) ([]byte, error) {
+	return Client{}.run(timeout, args...)
 }
 
 // Snapshot lee el estado vivo. Fail-open: si herdr no está o el server no
 // corre, devuelve Available:false con la razón — jamás tumba al daemon. Las
 // sesiones se leen siempre (aunque el server esté parado) para poder verlas,
 // pararlas, borrarlas y ofrecer "activar herdr".
-func Snapshot() State {
+// Snapshot local (retrocompatibilidad).
+func Snapshot() State { return Client{}.Snapshot() }
+
+// Snapshot lee el estado vivo del destino del Client. Fail-open. Distingue tres
+// casos: no instalado, instalado pero server parado, y (remoto) no alcanzable
+// por SSH — cada uno con su razón, para que el panel ofrezca lo correcto.
+func (c Client) Snapshot() State {
 	empty := func() State {
 		return State{Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{}, Sessions: []Session{}}
 	}
-	if _, err := exec.LookPath("herdr"); err != nil {
-		st := empty()
-		st.Reason = "herdr no está instalado en esta máquina"
-		return st
+	// Local: sabemos de inmediato si falta el binario. Remoto: lo inferimos de
+	// si herdr responde por SSH (no podemos LookPath en la otra máquina).
+	if c.target == "" {
+		if _, err := exec.LookPath("herdr"); err != nil {
+			st := empty()
+			st.Reason = "herdr no está instalado en esta máquina"
+			return st
+		}
 	}
-	sessions := sessionList()
-	out, err := run(4*time.Second, "api", "snapshot")
+	sessions, slErr := c.sessionList()
+	out, err := c.run(4*time.Second, "api", "snapshot")
 	if err != nil {
 		st := empty()
-		st.Installed = true
 		st.Sessions = sessions
-		st.Reason = "el server de herdr no está corriendo — actívalo para ver tus terminales en vivo"
+		switch {
+		case c.target == "":
+			st.Installed = true
+			st.Reason = "el server de herdr no está corriendo — actívalo para ver tus terminales en vivo"
+		case slErr == nil:
+			// herdr respondió `session list` por SSH → está instalado y alcanzable
+			st.Installed = true
+			st.Reason = "el server de herdr en «" + c.target + "» no está corriendo — actívalo"
+		default:
+			st.Reason = "no pude leer herdr en «" + c.target + "» por SSH (¿herdr instalado allá? ¿tu llave lista?)"
+		}
 		return st
 	}
-	st := parse(out)
+	st := c.parse(out)
 	st.Installed = true
 	st.Sessions = sessions
 	return st
@@ -118,10 +195,11 @@ func Snapshot() State {
 
 // sessionList lee `herdr session list --json`. Responde aunque el server esté
 // parado (por eso una sesión "stopped" sigue apareciendo hasta que se borra).
-func sessionList() []Session {
-	out, err := run(3*time.Second, "session", "list", "--json")
+// Devuelve error para distinguir "no alcanzable" de "sin sesiones".
+func (c Client) sessionList() ([]Session, error) {
+	out, err := c.run(3*time.Second, "session", "list", "--json")
 	if err != nil {
-		return []Session{}
+		return []Session{}, err
 	}
 	var env struct {
 		Sessions []struct {
@@ -132,17 +210,17 @@ func sessionList() []Session {
 		} `json:"sessions"`
 	}
 	if json.Unmarshal(out, &env) != nil {
-		return []Session{}
+		return []Session{}, nil
 	}
 	ss := make([]Session, 0, len(env.Sessions))
 	for _, s := range env.Sessions {
 		ss = append(ss, Session{Name: s.Name, Running: s.Running, Default: s.Default, Dir: s.Dir})
 	}
-	return ss
+	return ss, nil
 }
 
 // parse traduce la respuesta de `herdr api snapshot` a nuestro State.
-func parse(out []byte) State {
+func (c Client) parse(out []byte) State {
 	st := State{Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{}}
 	var env struct {
 		Result struct {
@@ -174,7 +252,7 @@ func parse(out []byte) State {
 	if s.Agents != nil {
 		st.Agents = s.Agents
 	}
-	enrichPrograms(st.Panes)
+	c.enrichPrograms(st.Panes)
 	return st
 }
 
@@ -192,15 +270,16 @@ type progEntry struct {
 // enrichPrograms llena Pane.Program vía process-info, SOLO para panes con un
 // agente detectado (status != unknown). Cache de 15 s por pane, en paralelo:
 // no infla el snapshot.
-func enrichPrograms(panes []Pane) {
+func (c Client) enrichPrograms(panes []Pane) {
 	var wg sync.WaitGroup
 	for i := range panes {
 		if panes[i].AgentStatus == "" || panes[i].AgentStatus == "unknown" {
 			continue
 		}
 		id := panes[i].PaneID
+		ckey := c.target + "\x00" + id // por-máquina: los pane_id colisionan entre hosts
 		progMu.Lock()
-		e, ok := progCache[id]
+		e, ok := progCache[ckey]
 		progMu.Unlock()
 		if ok && time.Since(e.at) < 15*time.Second {
 			panes[i].Program = e.prog
@@ -209,9 +288,9 @@ func enrichPrograms(panes []Pane) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			prog := detectProgram(id)
+			prog := c.detectProgram(id)
 			progMu.Lock()
-			progCache[id] = progEntry{prog, time.Now()}
+			progCache[ckey] = progEntry{prog, time.Now()}
 			progMu.Unlock()
 			panes[idx].Program = prog
 		}(i)
@@ -225,8 +304,8 @@ var agentPrograms = []struct{ needle, label string }{
 	{"gemini", "Gemini"}, {"vertex", "Vertex"}, {"amp", "Amp"}, {"copilot", "Copilot"},
 }
 
-func detectProgram(paneID string) string {
-	out, err := run(3*time.Second, "pane", "process-info", "--pane", paneID)
+func (c Client) detectProgram(paneID string) string {
+	out, err := c.run(3*time.Second, "pane", "process-info", "--pane", paneID)
 	if err != nil {
 		return ""
 	}
@@ -256,30 +335,40 @@ func detectProgram(paneID string) string {
 }
 
 // SessionStop detiene una sesión ENTERA de herdr (cierra todas sus terminales).
-func SessionStop(name string) error {
+func SessionStop(name string) error { return Client{}.SessionStop(name) }
+func (c Client) SessionStop(name string) error {
 	if name == "" {
 		name = "default"
 	}
-	_, err := run(6*time.Second, "session", "stop", name)
+	_, err := c.run(6*time.Second, "session", "stop", name)
 	return err
 }
 
 // SessionDelete borra una sesión de herdr (el registro que "nunca se borra").
 // herdr sólo deja borrar sesiones paradas; si está corriendo, herdr devuelve
 // error y lo propagamos.
-func SessionDelete(name string) error {
+func SessionDelete(name string) error { return Client{}.SessionDelete(name) }
+func (c Client) SessionDelete(name string) error {
 	if name == "" {
 		return fmt.Errorf("falta el nombre de la sesión")
 	}
-	_, err := run(6*time.Second, "session", "delete", name)
+	_, err := c.run(6*time.Second, "session", "delete", name)
 	return err
 }
 
-// ServerStart arranca el server de herdr HEADLESS (sin TUI) y DESACOPLADO del
-// daemon (Setsid: sobrevive aunque el daemon reinicie), tal como el usuario
-// quiere "activarlo por debajo". Idempotente-ish: si ya corre, herdr no abre
-// otro. La salida se descarta.
-func ServerStart() error {
+// ServerStart arranca el server de herdr HEADLESS (sin TUI) y DESACOPLADO, tal
+// como el usuario quiere "activarlo por debajo". Local: Setsid (sobrevive al
+// daemon). Remoto: nohup en el VPS para que la sesión SSH regrese sin bloquear.
+func ServerStart() error { return Client{}.ServerStart() }
+func (c Client) ServerStart() error {
+	if c.target != "" {
+		// remoto: arrancar detached en el VPS; ssh regresa de inmediato.
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		remote := "nohup herdr server </dev/null >/dev/null 2>&1 &"
+		args := append(sshBase(), c.target, remote)
+		return exec.CommandContext(ctx, "ssh", args...).Run()
+	}
 	if _, err := exec.LookPath("herdr"); err != nil {
 		return fmt.Errorf("herdr no está instalado en esta máquina")
 	}
@@ -297,6 +386,9 @@ func ServerStart() error {
 // puede tener un token en pantalla). --source visible = lo que se ve ahora.
 // format "ansi" conserva los colores SGR (el frontend los renderiza).
 func PaneRead(paneID string, lines int, format string) (string, error) {
+	return Client{}.PaneRead(paneID, lines, format)
+}
+func (c Client) PaneRead(paneID string, lines int, format string) (string, error) {
 	if paneID == "" {
 		return "", nil
 	}
@@ -306,7 +398,7 @@ func PaneRead(paneID string, lines int, format string) (string, error) {
 	if format != "ansi" {
 		format = "text"
 	}
-	out, err := run(4*time.Second, "pane", "read", paneID,
+	out, err := c.run(4*time.Second, "pane", "read", paneID,
 		"--source", "visible", "--lines", itoa(lines), "--format", format)
 	if err != nil {
 		return "", err
@@ -338,8 +430,9 @@ func itoa(n int) string {
 
 // PaneSend escribe texto + Enter en un pane (herdr pane run) — así se contesta
 // a un agente interactivo. El caller DEBE validar pane_id contra el snapshot.
-func PaneSend(paneID, text string) error {
-	_, err := run(5*time.Second, "pane", "run", paneID, text)
+func PaneSend(paneID, text string) error { return Client{}.PaneSend(paneID, text) }
+func (c Client) PaneSend(paneID, text string) error {
+	_, err := c.run(5*time.Second, "pane", "run", paneID, text)
 	return err
 }
 
@@ -347,26 +440,30 @@ func PaneSend(paneID, text string) error {
 
 // Interrupt manda Ctrl-C a un pane (send-keys C-c) — corta el proceso sin
 // cerrar la terminal.
-func Interrupt(paneID string) error {
-	_, err := run(5*time.Second, "pane", "send-keys", paneID, "C-c")
+func Interrupt(paneID string) error { return Client{}.Interrupt(paneID) }
+func (c Client) Interrupt(paneID string) error {
+	_, err := c.run(5*time.Second, "pane", "send-keys", paneID, "C-c")
 	return err
 }
 
 // ClosePane cierra un pane (mata su terminal).
-func ClosePane(paneID string) error {
-	_, err := run(5*time.Second, "pane", "close", paneID)
+func ClosePane(paneID string) error { return Client{}.ClosePane(paneID) }
+func (c Client) ClosePane(paneID string) error {
+	_, err := c.run(5*time.Second, "pane", "close", paneID)
 	return err
 }
 
 // CloseTab cierra un tab (y sus panes).
-func CloseTab(tabID string) error {
-	_, err := run(5*time.Second, "tab", "close", tabID)
+func CloseTab(tabID string) error { return Client{}.CloseTab(tabID) }
+func (c Client) CloseTab(tabID string) error {
+	_, err := c.run(5*time.Second, "tab", "close", tabID)
 	return err
 }
 
 // CloseWorkspace cierra un workspace entero.
-func CloseWorkspace(wsID string) error {
-	_, err := run(5*time.Second, "workspace", "close", wsID)
+func CloseWorkspace(wsID string) error { return Client{}.CloseWorkspace(wsID) }
+func (c Client) CloseWorkspace(wsID string) error {
+	_, err := c.run(5*time.Second, "workspace", "close", wsID)
 	return err
 }
 
@@ -375,12 +472,13 @@ func CloseWorkspace(wsID string) error {
 // PaneKeys manda teclas literales a un pane (herdr pane send-keys). Para
 // contestar un menú de agente: la tecla del número, o "Enter"/"y"/"n". El
 // caller valida el pane contra el snapshot.
-func PaneKeys(paneID string, keys []string) error {
+func PaneKeys(paneID string, keys []string) error { return Client{}.PaneKeys(paneID, keys) }
+func (c Client) PaneKeys(paneID string, keys []string) error {
 	if paneID == "" || len(keys) == 0 {
 		return nil
 	}
 	args := append([]string{"pane", "send-keys", paneID}, keys...)
-	_, err := run(5*time.Second, args...)
+	_, err := c.run(5*time.Second, args...)
 	return err
 }
 
@@ -405,6 +503,9 @@ func idFrom(out []byte, path ...string) string {
 
 // WorkspaceCreate abre un workspace nuevo (grupo aislado de tabs/panes).
 func WorkspaceCreate(label, cwd string) (string, error) {
+	return Client{}.WorkspaceCreate(label, cwd)
+}
+func (c Client) WorkspaceCreate(label, cwd string) (string, error) {
 	args := []string{"workspace", "create", "--no-focus"}
 	if cwd != "" {
 		args = append(args, "--cwd", cwd)
@@ -412,7 +513,7 @@ func WorkspaceCreate(label, cwd string) (string, error) {
 	if label != "" {
 		args = append(args, "--label", label)
 	}
-	out, err := run(6*time.Second, args...)
+	out, err := c.run(6*time.Second, args...)
 	if err != nil {
 		return "", err
 	}
@@ -421,6 +522,9 @@ func WorkspaceCreate(label, cwd string) (string, error) {
 
 // TabCreate abre una terminal nueva (tab) en un workspace.
 func TabCreate(wsID, label, cwd string) (string, error) {
+	return Client{}.TabCreate(wsID, label, cwd)
+}
+func (c Client) TabCreate(wsID, label, cwd string) (string, error) {
 	args := []string{"tab", "create", "--no-focus"}
 	if wsID != "" {
 		args = append(args, "--workspace", wsID)
@@ -431,7 +535,7 @@ func TabCreate(wsID, label, cwd string) (string, error) {
 	if label != "" {
 		args = append(args, "--label", label)
 	}
-	out, err := run(6*time.Second, args...)
+	out, err := c.run(6*time.Second, args...)
 	if err != nil {
 		return "", err
 	}
@@ -440,6 +544,9 @@ func TabCreate(wsID, label, cwd string) (string, error) {
 
 // PaneSplit divide un pane (terminal lado a lado). dir: right | down.
 func PaneSplit(paneID, dir, cwd string) (string, error) {
+	return Client{}.PaneSplit(paneID, dir, cwd)
+}
+func (c Client) PaneSplit(paneID, dir, cwd string) (string, error) {
 	if dir != "right" && dir != "down" {
 		dir = "down"
 	}
@@ -447,7 +554,7 @@ func PaneSplit(paneID, dir, cwd string) (string, error) {
 	if cwd != "" {
 		args = append(args, "--cwd", cwd)
 	}
-	out, err := run(6*time.Second, args...)
+	out, err := c.run(6*time.Second, args...)
 	if err != nil {
 		return "", err
 	}

@@ -314,7 +314,11 @@ func (o *Op) OpPaneSend(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 400, "texto demasiado largo (máx 4000)")
 		return
 	}
-	st := herdr.Snapshot()
+	c, cok := herdrClientFor(rw, b)
+	if !cok {
+		return
+	}
+	st := c.Snapshot()
 	if !st.Available {
 		fail(rw, 400, "herdr no está corriendo")
 		return
@@ -330,7 +334,7 @@ func (o *Op) OpPaneSend(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 404, "ese pane no existe en herdr (¿se cerró?)")
 		return
 	}
-	if err := herdr.PaneSend(pane, text); err != nil {
+	if err := c.PaneSend(pane, text); err != nil {
 		fail(rw, 500, "herdr no aceptó el texto: "+redact.Clip(err.Error(), 120))
 		return
 	}
@@ -519,19 +523,61 @@ func DBInfo(db *sql.DB, path string) map[string]any {
 // OpHerdr — control de ciclo de vida de herdr (interrumpir, cerrar pane/tab/
 // workspace). Toda acción es DESTRUCTIVA: el frontend pide confirmación. El id
 // se valida contra el snapshot VIVO — jamás pasamos ids arbitrarios al CLI.
+// herdrClientFor resuelve el destino (campo "target" del body) a un cliente de
+// herdr — local o SSH remoto. El navegador manda el NOMBRE del target; sólo se
+// aceptan los que el humano agregó (contra inyección de destinos arbitrarios).
+func herdrClientFor(rw http.ResponseWriter, b map[string]any) (herdr.Client, bool) {
+	ssh, ok := ResolveTarget(s(b, "target"))
+	if !ok {
+		fail(rw, 400, "destino desconocido — agrégalo primero en Terminales")
+		return herdr.Client{}, false
+	}
+	return herdr.Remote(ssh), true
+}
+
+// OpTargets administra los destinos remotos (VPS) por SSH: add / remove. El
+// alias/host se valida en AddTarget; la llave la maneja OpenSSH, nunca el daemon.
+func (o *Op) OpTargets(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	switch s(b, "action") {
+	case "add":
+		if err := AddTarget(s(b, "name"), s(b, "ssh")); err != nil {
+			fail(rw, 400, err.Error())
+			return
+		}
+		o.emit("decision", "el humano agregó un destino remoto: "+s(b, "name"), "")
+		writeJSON(rw, 200, map[string]any{"ok": true, "targets": LoadTargets()})
+	case "remove":
+		if err := RemoveTarget(s(b, "name")); err != nil {
+			fail(rw, 500, err.Error())
+			return
+		}
+		writeJSON(rw, 200, map[string]any{"ok": true, "targets": LoadTargets()})
+	default:
+		fail(rw, 400, "acción desconocida (add|remove)")
+	}
+}
+
 func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 	b, ok := o.Guard(rw, r)
 	if !ok {
 		return
 	}
 	action, id := s(b, "action"), s(b, "id")
-	st := herdr.Snapshot()
+	c, cok := herdrClientFor(rw, b)
+	if !cok {
+		return
+	}
+	st := c.Snapshot()
 
 	// Acciones que funcionan con el server PARADO (no requieren snapshot vivo):
 	// arrancar el server, y borrar una sesión histórica.
 	switch action {
 	case "start-server":
-		if err := herdr.ServerStart(); err != nil {
+		if err := c.ServerStart(); err != nil {
 			fail(rw, 500, "no pude activar herdr: "+redact.Clip(err.Error(), 120))
 			return
 		}
@@ -562,7 +608,7 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 			fail(rw, 409, "esa sesión está corriendo — párala antes de borrarla")
 			return
 		}
-		if err := herdr.SessionDelete(id); err != nil {
+		if err := c.SessionDelete(id); err != nil {
 			fail(rw, 500, "herdr no pudo borrarla: "+redact.Clip(err.Error(), 120))
 			return
 		}
@@ -618,15 +664,15 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 	var verb string
 	switch action {
 	case "interrupt":
-		err, verb = herdr.Interrupt(id), "interrumpí (Ctrl-C)"
+		err, verb = c.Interrupt(id), "interrumpí (Ctrl-C)"
 	case "close-pane":
-		err, verb = herdr.ClosePane(id), "cerré la terminal"
+		err, verb = c.ClosePane(id), "cerré la terminal"
 	case "close-tab":
-		err, verb = herdr.CloseTab(id), "cerré el tab"
+		err, verb = c.CloseTab(id), "cerré el tab"
 	case "close-workspace":
-		err, verb = herdr.CloseWorkspace(id), "cerré el workspace"
+		err, verb = c.CloseWorkspace(id), "cerré el workspace"
 	case "stop-session":
-		err, verb = herdr.SessionStop(id), "detuve la sesión de herdr"
+		err, verb = c.SessionStop(id), "detuve la sesión de herdr"
 	}
 	if err != nil {
 		fail(rw, 500, "herdr no aceptó la acción: "+redact.Clip(err.Error(), 120))
@@ -662,7 +708,11 @@ func (o *Op) OpHerdrKey(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 400, "sin teclas válidas")
 		return
 	}
-	st := herdr.Snapshot()
+	c, cok := herdrClientFor(rw, b)
+	if !cok {
+		return
+	}
+	st := c.Snapshot()
 	if !st.Available {
 		fail(rw, 400, "herdr no está corriendo")
 		return
@@ -677,7 +727,7 @@ func (o *Op) OpHerdrKey(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 404, "ese pane ya no existe")
 		return
 	}
-	if err := herdr.PaneKeys(pane, keys); err != nil {
+	if err := c.PaneKeys(pane, keys); err != nil {
 		fail(rw, 500, "herdr no aceptó las teclas")
 		return
 	}
@@ -731,7 +781,11 @@ func (o *Op) OpHerdrOpen(rw http.ResponseWriter, r *http.Request) {
 	action := s(b, "action")
 	cwd := safePath(s(b, "cwd"))
 	label := labelOK(s(b, "label"))
-	st := herdr.Snapshot()
+	c, cok := herdrClientFor(rw, b)
+	if !cok {
+		return
+	}
+	st := c.Snapshot()
 	if !st.Available {
 		fail(rw, 400, "herdr no está corriendo")
 		return
@@ -740,7 +794,7 @@ func (o *Op) OpHerdrOpen(rw http.ResponseWriter, r *http.Request) {
 	var err error
 	switch action {
 	case "new-workspace":
-		newID, err = herdr.WorkspaceCreate(label, cwd)
+		newID, err = c.WorkspaceCreate(label, cwd)
 	case "new-terminal": // un tab nuevo en un workspace
 		wsID := s(b, "workspace_id")
 		valid := false
@@ -753,7 +807,7 @@ func (o *Op) OpHerdrOpen(rw http.ResponseWriter, r *http.Request) {
 			fail(rw, 404, "ese workspace ya no existe")
 			return
 		}
-		newID, err = herdr.TabCreate(wsID, label, cwd)
+		newID, err = c.TabCreate(wsID, label, cwd)
 	case "split-pane":
 		pane := s(b, "pane")
 		valid := false
@@ -766,7 +820,7 @@ func (o *Op) OpHerdrOpen(rw http.ResponseWriter, r *http.Request) {
 			fail(rw, 404, "ese pane ya no existe")
 			return
 		}
-		newID, err = herdr.PaneSplit(pane, s(b, "direction"), cwd)
+		newID, err = c.PaneSplit(pane, s(b, "direction"), cwd)
 	default:
 		fail(rw, 400, "acción desconocida")
 		return
