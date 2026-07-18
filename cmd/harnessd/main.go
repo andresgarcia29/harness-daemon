@@ -247,9 +247,16 @@ func run(port int, wsPath string) int {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		hs := herdr.Snapshot()
-		api.EnrichLiveness(snap, hs) // liveness honesta: herdr manda sobre el mtime
-		snap.Herdr = hs
+		// liveness SIEMPRE con el herdr LOCAL (las sesiones/tareas son de esta
+		// máquina). El target sólo cambia qué herdr muestra Terminales.
+		localH := herdr.Local().Snapshot()
+		api.EnrichLiveness(snap, localH)
+		if ssh, _ := api.ResolveTarget(r.URL.Query().Get("target")); ssh != "" {
+			snap.Herdr = herdr.Remote(ssh).Snapshot()
+		} else {
+			snap.Herdr = localH
+		}
+		snap.Targets = api.LoadTargets()
 		snap.Connections = api.Connections()
 		snap.Workspace.Name = w.Name
 		_ = json.NewEncoder(rw).Encode(snap)
@@ -272,9 +279,14 @@ func run(port int, wsPath string) int {
 			if err != nil {
 				return true
 			}
-			hs := herdr.Snapshot()
-			api.EnrichLiveness(snap, hs) // liveness honesta: herdr manda sobre el mtime
-			snap.Herdr = hs
+			localH := herdr.Local().Snapshot()
+			api.EnrichLiveness(snap, localH)
+			if ssh, _ := api.ResolveTarget(r.URL.Query().Get("target")); ssh != "" {
+				snap.Herdr = herdr.Remote(ssh).Snapshot()
+			} else {
+				snap.Herdr = localH
+			}
+			snap.Targets = api.LoadTargets()
 			snap.Connections = api.Connections()
 			snap.Workspace.Name = w.Name
 			b, _ := json.Marshal(snap)
@@ -322,7 +334,8 @@ func run(port int, wsPath string) int {
 	// Cross-workspace a propósito: ves todo lo que corre en la máquina.
 	mux.HandleFunc("/api/herdr", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(herdr.Snapshot())
+		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
+		_ = json.NewEncoder(rw).Encode(herdr.Remote(ssh).Snapshot())
 	})
 	// El plano de OPERAR (ADR-0010) — crear trabajo, jamás merges.
 	mux.HandleFunc("/api/op/task", op.OpTask)
@@ -331,6 +344,7 @@ func run(port int, wsPath string) int {
 	mux.HandleFunc("/api/op/herdr", op.OpHerdr)
 	mux.HandleFunc("/api/op/herdr-key", op.OpHerdrKey)
 	mux.HandleFunc("/api/op/herdr-open", op.OpHerdrOpen)
+	mux.HandleFunc("/api/op/targets", op.OpTargets)
 	mux.HandleFunc("/api/op/connect", op.OpConnect)
 	mux.HandleFunc("/api/op/sync-prices", op.OpSyncPrices)
 	mux.HandleFunc("/api/db", func(rw http.ResponseWriter, r *http.Request) {
@@ -339,7 +353,8 @@ func run(port int, wsPath string) int {
 	})
 	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		txt, err := herdr.PaneRead(r.URL.Query().Get("id"), 60, r.URL.Query().Get("fmt"))
+		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
+		txt, err := herdr.Remote(ssh).PaneRead(r.URL.Query().Get("id"), 60, r.URL.Query().Get("fmt"))
 		if err != nil {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no pude leer el pane"})
 			return

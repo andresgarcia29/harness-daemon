@@ -117,6 +117,7 @@ type Snapshot struct {
 	Toolbox     *Toolbox         `json:"toolbox,omitempty"`
 	Mcp         []McpServer      `json:"mcp"`
 	Herdr       any              `json:"herdr,omitempty"`
+	Targets     []Target         `json:"targets"` // máquinas remotas (VPS) por SSH
 	Warning     string           `json:"warning,omitempty"`
 }
 type wsInfo struct {

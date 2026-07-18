@@ -11,7 +11,7 @@ const realSnap = `{"id":"cli:api:snapshot","result":{"snapshot":{"version":"0.7.
 	`"agents":[{"name":"demo","pane_id":"w8:p2","workspace_id":"w8","agent_status":"working","cwd":"/x"}]}}}`
 
 func TestParseSnapshotReal(t *testing.T) {
-	st := parse([]byte(realSnap))
+	st := Client{}.parse([]byte(realSnap))
 	if !st.Available || st.Version != "0.7.3" {
 		t.Fatalf("available/version: %v %q", st.Available, st.Version)
 	}
@@ -27,7 +27,7 @@ func TestParseSnapshotReal(t *testing.T) {
 }
 
 func TestParseBasura(t *testing.T) {
-	st := parse([]byte("no soy json"))
+	st := Client{}.parse([]byte("no soy json"))
 	if st.Available {
 		t.Fatal("basura no debe reportar available")
 	}
@@ -44,5 +44,46 @@ func TestItoa(t *testing.T) {
 		if got := itoa(c.n); got != c.s {
 			t.Errorf("itoa(%d)=%q", c.n, got)
 		}
+	}
+}
+
+func TestShQuoteAntiInyeccion(t *testing.T) {
+	// El quoting POSIX debe neutralizar TODO metacarácter de shell: el remoto
+	// jamás debe interpretar ; $() ` & | espacios ni cerrar la comilla.
+	cases := map[string]string{
+		"simple":          "'simple'",
+		"con espacio":     "'con espacio'",
+		"a;rm -rf /":      "'a;rm -rf /'",
+		"$(whoami)":       "'$(whoami)'",
+		"`id`":            "'`id`'",
+		"a|b&&c":          "'a|b&&c'",
+		"it's":            `'it'\''s'`, // la comilla se escapa cerrando/reabriendo
+	}
+	for in, want := range cases {
+		if got := shQuote(in); got != want {
+			t.Errorf("shQuote(%q)=%q, quería %q", in, got, want)
+		}
+	}
+}
+
+func TestShJoinComando(t *testing.T) {
+	// Un texto malicioso mandado a un pane remoto queda encapsulado: el remoto
+	// corre `herdr pane run w1:p1 '...; rm -rf /'` — el ; NO se ejecuta.
+	got := "herdr " + shJoin([]string{"pane", "run", "w1:p1", "hola; rm -rf / #"})
+	want := `herdr 'pane' 'run' 'w1:p1' 'hola; rm -rf / #'`
+	if got != want {
+		t.Fatalf("comando remoto inseguro:\n got=%q\nwant=%q", got, want)
+	}
+}
+
+func TestRemoteLocalClient(t *testing.T) {
+	if (Client{}).target != "" {
+		t.Error("Client{} debe ser local (target vacío)")
+	}
+	if Remote("  vps-1  ").target != "vps-1" {
+		t.Error("Remote debe recortar espacios del target")
+	}
+	if Local().target != "" {
+		t.Error("Local() debe ser target vacío")
 	}
 }
