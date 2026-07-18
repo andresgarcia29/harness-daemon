@@ -3,7 +3,11 @@
 // el colector persiste ya redactado. Es la última pieza de paridad de lectura.
 package api
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"github.com/andresgarcia29/harness-daemon/internal/store"
+)
 
 type threadItem struct {
 	K   string `json:"k"` // text | think | tool
@@ -32,7 +36,7 @@ type SessionDetail struct {
 }
 
 // BuildSession arma el detalle de UNA sesión desde el store.
-func BuildSession(db *sql.DB, sessionID string, now int64) (*SessionDetail, error) {
+func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail, error) {
 	prices, _ := loadPrices(db)
 	// usage + primer/último ts por agente (de sus llamadas — el reloj bueno)
 	au := map[string]*usage{}

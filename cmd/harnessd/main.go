@@ -6,7 +6,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -155,6 +155,31 @@ func ensure(port int, wsPath string) int {
 	return 1
 }
 
+// openStore decide el almacén y lo abre (corriendo sus migraciones). Si el
+// usuario conectó Postgres desde el panel (hay un DSN en ConfigDir/postgres-token),
+// usa Postgres; si no, SQLite en ConfigDir/harness.db — el comportamiento de
+// siempre. Devuelve también una etiqueta legible para /health y la tarjeta de
+// Conexiones (la ruta del archivo en SQLite, "postgres" en PG). El DSN JAMÁS se
+// devuelve ni se loguea: es un secreto write-only como los demás tokens.
+//
+// El almacén se elige AL ARRANCAR: conectar Postgres desde el panel guarda el
+// DSN pero no migra al vuelo el daemon vivo (cambiar de motor con el colector
+// escribiendo es justo lo peligroso que no hacemos). El panel pide reiniciar.
+func openStore() (*store.Store, string, error) {
+	sqlitePath := filepath.Join(ident.ConfigDir(), "harness.db")
+	if b, err := os.ReadFile(filepath.Join(ident.ConfigDir(), "postgres-token")); err == nil {
+		if dsn := strings.TrimSpace(string(b)); dsn != "" {
+			st, err := store.Open(dsn)
+			if err != nil {
+				return nil, "", fmt.Errorf("postgres configurado pero no abre: %w", err)
+			}
+			return st, "postgres", nil
+		}
+	}
+	st, err := store.Open(sqlitePath)
+	return st, sqlitePath, err
+}
+
 // buildSnapshot arma el snapshot que sirve el panel según el target elegido:
 //   - LOCAL: lee la DB de esta máquina (api.Build) + herdr local + liveness.
 //   - REMOTO (un VPS): trae el snapshot COMPLETO del VPS por SSH
@@ -162,7 +187,7 @@ func ensure(port int, wsPath string) int {
 //     selector de máquina muta TODA la página (tareas, sesiones, costo), no sólo
 //     las terminales. Si el VPS no responde harnessd, muestra vacío + warning
 //     (las terminales sí siguen, van por otro canal).
-func buildSnapshot(r *http.Request, db *sql.DB, w ident.Workspace) *api.Snapshot {
+func buildSnapshot(r *http.Request, db *store.Store, w ident.Workspace) *api.Snapshot {
 	tgt, ok := api.ResolveTargetFull(r.URL.Query().Get("target"))
 	if !ok {
 		tgt = api.Target{} // destino desconocido → local
@@ -216,13 +241,13 @@ func snapshotCmd(wsPath string) int {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		return 1
 	}
-	st, err := store.Open(filepath.Join(ident.ConfigDir(), "harness.db"))
+	st, _, err := openStore()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ almacén: %v\n", err)
 		return 1
 	}
 	defer st.Close()
-	snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
+	snap, err := api.Build(st, w.ID, w.Path, time.Now().Unix())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		return 1
@@ -259,28 +284,30 @@ func run(port int, wsPath string) int {
 	}
 	defer ln.Close()
 
-	dbPath := filepath.Join(ident.ConfigDir(), "harness.db")
-	health := lock.Health{
-		Name: "harnessd", Version: Version, Protocol: lock.Protocol,
-		PID: os.Getpid(), Mode: "all-in-one", Started: started.Unix(),
-		DB: dbPath,
-	}
-
 	// Fase 3: el colector. El almacén abre (y migra) ANTES de anunciar salud:
 	// un daemon que dice "ok" sin poder escribir es un daemon que miente.
-	st, err := store.Open(dbPath)
+	// openStore elige el motor: Postgres si está conectado, SQLite si no.
+	st, dbPath, err := openStore()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ almacén: %v\n", err)
 		return 1
 	}
 	defer st.Close()
+	health := lock.Health{
+		Name: "harnessd", Version: Version, Protocol: lock.Protocol,
+		PID: os.Getpid(), Mode: "all-in-one", Started: started.Unix(),
+		DB: dbPath,
+	}
+	if st.Dialect == "postgres" {
+		fmt.Println("   almacén: Postgres (conectado desde el panel)")
+	}
 	_ = st.SeedBuiltinPrices() // no pisa ediciones del usuario; sin esto todo costo es NULL
-	op := api.NewOp(w.Path, w.ID, st.DB, port)
+	op := api.NewOp(w.Path, w.ID, st, port)
 	// precios de modelos observados sin precio: sync automático al arranque
 	// (fail-open, en background — sin red simplemente no pasa nada)
 	go func() {
 		time.Sleep(8 * time.Second) // deja que el colector observe modelos primero
-		if added, _, err := api.SyncPrices(st.DB); err == nil && len(added) > 0 {
+		if added, _, err := api.SyncPrices(st); err == nil && len(added) > 0 {
 			fmt.Printf("   precios sincronizados desde OpenRouter: %v\n", added)
 		}
 	}()
@@ -326,7 +353,7 @@ func run(port int, wsPath string) int {
 		}
 		rw.Header().Set("Content-Type", "application/json")
 		rw.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(rw).Encode(buildSnapshot(r, st.DB, w))
+		_ = json.NewEncoder(rw).Encode(buildSnapshot(r, st, w))
 	})
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
 	// colector ya escribe cada 2 s; aquí re-emitimos el snapshot al mismo ritmo.
@@ -345,7 +372,7 @@ func run(port int, wsPath string) int {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		send := func() bool {
-			b, _ := json.Marshal(buildSnapshot(r, st.DB, w))
+			b, _ := json.Marshal(buildSnapshot(r, st, w))
 			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
 				return false
 			}
@@ -369,7 +396,7 @@ func run(port int, wsPath string) int {
 	// Paridad de lectura: el grafo completo de una tarea, sus chips de git.
 	mux.HandleFunc("/api/task-events", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(api.TaskEvents(st.DB, w.ID, r.URL.Query().Get("task")))
+		_ = json.NewEncoder(rw).Encode(api.TaskEvents(st, w.ID, r.URL.Query().Get("task")))
 	})
 	mux.HandleFunc("/api/task-git", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -377,7 +404,7 @@ func run(port int, wsPath string) int {
 	})
 	mux.HandleFunc("/api/session", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		d, err := api.BuildSession(st.DB, r.URL.Query().Get("id"), time.Now().Unix())
+		d, err := api.BuildSession(st, r.URL.Query().Get("id"), time.Now().Unix())
 		if err != nil {
 			rw.WriteHeader(500)
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
@@ -410,7 +437,7 @@ func run(port int, wsPath string) int {
 	mux.HandleFunc("/api/op/sync-prices", op.OpSyncPrices)
 	mux.HandleFunc("/api/db", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(api.DBInfo(st.DB, dbPath))
+		_ = json.NewEncoder(rw).Encode(api.DBInfo(st, dbPath))
 	})
 	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
 		if !api.GuardRead(rw, r) {

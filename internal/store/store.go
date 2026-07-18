@@ -19,33 +19,50 @@ import (
 	"strconv"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/lib/pq"      // driver Postgres (almacén opcional)
+	_ "modernc.org/sqlite"     // driver SQLite (Go puro, default)
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations
 var migrations embed.FS
 
 type Store struct {
-	DB *sql.DB
+	DB      *sql.DB
+	Dialect string // "sqlite" | "postgres"
 }
 
-// Open abre (o crea) la base y aplica las migraciones pendientes.
-// FORWARD-ONLY: antes de migrar, copia la DB a .bak-<n> — revertir el binario
-// no puede costarte los datos (ley del esquema).
-func Open(path string) (*Store, error) {
+func isPostgresDSN(s string) bool {
+	return strings.HasPrefix(s, "postgres://") || strings.HasPrefix(s, "postgresql://")
+}
+
+// Open abre el almacén y aplica las migraciones pendientes (auto-migrate). Si el
+// DSN es de Postgres (postgres://…) usa Postgres; si no, lo trata como ruta de
+// archivo SQLite (el comportamiento de siempre). FORWARD-ONLY: en SQLite copia
+// la DB a .bak-<n> antes de migrar — revertir el binario no puede costarte los
+// datos (ley del esquema).
+func Open(dsn string) (*Store, error) {
+	if isPostgresDSN(dsn) {
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			return nil, err
+		}
+		db.SetMaxOpenConns(8) // Postgres aguanta más lectores concurrentes
+		s := &Store{DB: db, Dialect: "postgres"}
+		if err := s.migrate(""); err != nil {
+			db.Close()
+			return nil, err
+		}
+		return s, nil
+	}
 	// _pragma via DSN: cada conexión del pool las hereda.
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=busy_timeout(5000)")
+	db, err := sql.Open("sqlite", dsn+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
-	// WAL = 1 escritor + N lectores CONCURRENTES. Con una sola conexión, una
-	// lectura del API se encolaba detrás de las escrituras del colector y el
-	// panel se colgaba mientras ingería. Varias conexiones dejan que las
-	// lecturas (snapshot, /api/session) corran mientras el colector escribe; las
-	// escrituras siguen serializadas por la app (un Tick a la vez) + busy_timeout.
+	// WAL = 1 escritor + N lectores CONCURRENTES (ver nota histórica del pool).
 	db.SetMaxOpenConns(4)
-	s := &Store{DB: db}
-	if err := s.migrate(path); err != nil {
+	s := &Store{DB: db, Dialect: "sqlite"}
+	if err := s.migrate(dsn); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -54,9 +71,58 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.DB.Close() }
 
+// Queryer es lo MÍNIMO que el resto del daemon (api/) necesita del almacén: las
+// tres operaciones dialecto-agnósticas (con el rebind ?→$N ya aplicado). *Store
+// lo satisface. Que api dependa de esto y no de *sql.DB es lo que hace que las
+// mismas queries corran igual sobre SQLite o Postgres.
+type Queryer interface {
+	Exec(q string, args ...any) (sql.Result, error)
+	Query(q string, args ...any) (*sql.Rows, error)
+	QueryRow(q string, args ...any) *sql.Row
+}
+
+// ── Capa dialecto-agnóstica ───────────────────────────────────────────────
+
+// rebind traduce los placeholders '?' a '$N' en Postgres (SQLite usa '?', lo
+// deja igual). Respeta literales entre comillas simples.
+func (s *Store) rebind(q string) string {
+	if s.Dialect != "postgres" {
+		return q
+	}
+	var b strings.Builder
+	n, inStr := 0, false
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		if c == '\'' {
+			inStr = !inStr
+		}
+		if c == '?' && !inStr {
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+func (s *Store) Exec(q string, args ...any) (sql.Result, error) { return s.DB.Exec(s.rebind(q), args...) }
+func (s *Store) Query(q string, args ...any) (*sql.Rows, error) { return s.DB.Query(s.rebind(q), args...) }
+func (s *Store) QueryRow(q string, args ...any) *sql.Row        { return s.DB.QueryRow(s.rebind(q), args...) }
+
+// maxFn: la función de MÁXIMO ESCALAR del dialecto — SQLite MAX(a,b), Postgres
+// GREATEST(a,b) (allá MAX es sólo agregado).
+func (s *Store) maxFn() string {
+	if s.Dialect == "postgres" {
+		return "GREATEST"
+	}
+	return "MAX"
+}
+
 func (s *Store) schemaVersion() int {
 	var v string
-	err := s.DB.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&v)
+	err := s.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&v)
 	if err != nil {
 		return 0 // sin tabla meta = base virgen
 	}
@@ -65,14 +131,18 @@ func (s *Store) schemaVersion() int {
 }
 
 func (s *Store) migrate(dbPath string) error {
-	entries, err := fs.Glob(migrations, "migrations/*.sql")
+	dir := "migrations"
+	if s.Dialect == "postgres" {
+		dir = "migrations/pg" // esquema portado a Postgres (BIGINT, sin PRAGMA…)
+	}
+	entries, err := fs.Glob(migrations, dir+"/*.sql")
 	if err != nil {
 		return err
 	}
 	sort.Strings(entries) // 001_, 002_, … el orden ES el contrato
 	current := s.schemaVersion()
 	for _, name := range entries {
-		base := strings.TrimPrefix(name, "migrations/")
+		base := strings.TrimPrefix(name, dir+"/")
 		n, err := strconv.Atoi(base[:3])
 		if err != nil {
 			return fmt.Errorf("migración con nombre inválido %q (debe empezar NNN_)", base)
@@ -80,7 +150,8 @@ func (s *Store) migrate(dbPath string) error {
 		if n <= current {
 			continue
 		}
-		if current > 0 && dbPath != ":memory:" {
+		// respaldo de archivo sólo en SQLite (Postgres no es un archivo).
+		if s.Dialect == "sqlite" && current > 0 && dbPath != ":memory:" {
 			// respaldo ANTES de tocar nada; si ya existe, no lo pisamos
 			bak := dbPath + ".bak-" + base[:3]
 			if _, err := os.Stat(bak); os.IsNotExist(err) {
@@ -93,10 +164,10 @@ func (s *Store) migrate(dbPath string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := s.DB.Exec(string(sqlText)); err != nil {
+		if _, err := s.Exec(string(sqlText)); err != nil {
 			return fmt.Errorf("migración %s: %w", base, err)
 		}
-		if _, err := s.DB.Exec(
+		if _, err := s.Exec(
 			`INSERT INTO meta(key,value) VALUES('schema_version',?)
 			 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(n)); err != nil {
 			return err
@@ -109,7 +180,7 @@ func (s *Store) migrate(dbPath string) error {
 // ── Identidad ────────────────────────────────────────────────────────────
 
 func (s *Store) UpsertMachine(id, hostname, osName, arch, kind string, now int64) error {
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO machines (id, hostname, os, arch, kind, first_seen, last_seen)
 		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -119,7 +190,7 @@ func (s *Store) UpsertMachine(id, hostname, osName, arch, kind string, now int64
 }
 
 func (s *Store) UpsertWorkspace(id, remote, name string, now int64) error {
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO workspaces (id, remote, name, first_seen, last_seen)
 		VALUES (?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen`,
@@ -128,7 +199,7 @@ func (s *Store) UpsertWorkspace(id, remote, name string, now int64) error {
 }
 
 func (s *Store) UpsertWorkspacePath(machineID, workspaceID, path string, now int64) error {
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO workspace_paths (machine_id, workspace_id, path, last_seen)
 		VALUES (?,?,?,?)
 		ON CONFLICT(machine_id, path) DO UPDATE SET
@@ -138,11 +209,11 @@ func (s *Store) UpsertWorkspacePath(machineID, workspaceID, path string, now int
 }
 
 func (s *Store) UpsertSession(id, machineID, workspaceID, cli string, started, now int64) error {
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO sessions (id, machine_id, workspace_id, cli, started, last_seen)
 		VALUES (?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
-		  last_seen=MAX(sessions.last_seen, excluded.last_seen)`,
+		  last_seen=`+s.maxFn()+`(sessions.last_seen, excluded.last_seen)`,
 		id, machineID, workspaceID, cli, started, now)
 	return err
 }
@@ -153,7 +224,7 @@ func (s *Store) SetSessionCwd(id, cwd string) error {
 	if cwd == "" {
 		return nil
 	}
-	_, err := s.DB.Exec(`UPDATE sessions SET cwd=? WHERE id=? AND cwd=''`, cwd, id)
+	_, err := s.Exec(`UPDATE sessions SET cwd=? WHERE id=? AND cwd=''`, cwd, id)
 	return err
 }
 
@@ -163,14 +234,14 @@ func (s *Store) UpsertAgent(sessionID, agentID, parent, typ, desc string, depth 
 	if parent != "" {
 		parentVal = parent
 	}
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO agents (session_id, id, parent_agent_id, type, description, spawn_depth, started, last_seen)
 		VALUES (?,?,?,?,?,?,?,?)
 		ON CONFLICT(session_id, id) DO UPDATE SET
 		  parent_agent_id=COALESCE(excluded.parent_agent_id, agents.parent_agent_id),
 		  type=COALESCE(NULLIF(excluded.type,''), agents.type),
 		  description=COALESCE(NULLIF(excluded.description,''), agents.description),
-		  last_seen=MAX(agents.last_seen, excluded.last_seen)`,
+		  last_seen=`+s.maxFn()+`(agents.last_seen, excluded.last_seen)`,
 		sessionID, agentID, parentVal, typ, desc, depth, started, now)
 	return err
 }
@@ -200,17 +271,17 @@ func (s *Store) UpsertCall(c Call) error {
 	if c.Speed == "" {
 		c.Speed = "standard"
 	}
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO calls (message_id, request_id, session_id, agent_id, model, speed,
 		                   input_tokens, output_tokens, cache_read_tokens,
 		                   cache_write_5m_tokens, cache_write_1h_tokens, ts)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(message_id) DO UPDATE SET
-		  input_tokens          = MAX(calls.input_tokens,          excluded.input_tokens),
-		  output_tokens         = MAX(calls.output_tokens,         excluded.output_tokens),
-		  cache_read_tokens     = MAX(calls.cache_read_tokens,     excluded.cache_read_tokens),
-		  cache_write_5m_tokens = MAX(calls.cache_write_5m_tokens, excluded.cache_write_5m_tokens),
-		  cache_write_1h_tokens = MAX(calls.cache_write_1h_tokens, excluded.cache_write_1h_tokens)`,
+		  input_tokens          = `+s.maxFn()+`(calls.input_tokens,          excluded.input_tokens),
+		  output_tokens         = `+s.maxFn()+`(calls.output_tokens,         excluded.output_tokens),
+		  cache_read_tokens     = `+s.maxFn()+`(calls.cache_read_tokens,     excluded.cache_read_tokens),
+		  cache_write_5m_tokens = `+s.maxFn()+`(calls.cache_write_5m_tokens, excluded.cache_write_5m_tokens),
+		  cache_write_1h_tokens = `+s.maxFn()+`(calls.cache_write_1h_tokens, excluded.cache_write_1h_tokens)`,
 		c.MessageID, c.RequestID, c.SessionID, c.AgentID, c.Model, c.Speed,
 		c.In, c.Out, c.CacheRead, c.CacheWrite5m, c.CacheWrite1h, c.TS)
 	return err
@@ -246,7 +317,7 @@ func (s *Store) InsertEvent(e Event) error {
 			ok = 0
 		}
 	}
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO events (uid, ts, machine_id, workspace_id, session_id, task_id, kind, actor, summary, ok)
 		VALUES (?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(uid) DO NOTHING`,
@@ -255,14 +326,14 @@ func (s *Store) InsertEvent(e Event) error {
 }
 
 func (s *Store) UpsertTask(workspaceID, id, title, origin, phase string, now int64) error {
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO tasks (workspace_id, id, title, origin, phase, started, last_seen)
 		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(workspace_id, id) DO UPDATE SET
 		  title=COALESCE(NULLIF(excluded.title,''), tasks.title),
 		  origin=COALESCE(NULLIF(excluded.origin,''), tasks.origin),
 		  phase=COALESCE(NULLIF(excluded.phase,''), tasks.phase),
-		  last_seen=MAX(tasks.last_seen, excluded.last_seen)`,
+		  last_seen=`+s.maxFn()+`(tasks.last_seen, excluded.last_seen)`,
 		workspaceID, id, title, origin, phase, now, now)
 	return err
 }
@@ -276,7 +347,7 @@ type Offset struct {
 
 func (s *Store) GetOffset(source string) (Offset, error) {
 	var o Offset
-	err := s.DB.QueryRow(`SELECT dev, ino, offset FROM offsets WHERE source=?`, source).
+	err := s.QueryRow(`SELECT dev, ino, "offset" FROM offsets WHERE source=?`, source).
 		Scan(&o.Dev, &o.Ino, &o.Offset)
 	if err == sql.ErrNoRows {
 		return Offset{}, nil
@@ -285,11 +356,11 @@ func (s *Store) GetOffset(source string) (Offset, error) {
 }
 
 func (s *Store) SetOffset(source string, o Offset, now int64) error {
-	_, err := s.DB.Exec(`
-		INSERT INTO offsets (source, dev, ino, offset, last_read)
+	_, err := s.Exec(`
+		INSERT INTO offsets (source, dev, ino, "offset", last_read)
 		VALUES (?,?,?,?,?)
 		ON CONFLICT(source) DO UPDATE SET
-		  dev=excluded.dev, ino=excluded.ino, offset=excluded.offset, last_read=excluded.last_read`,
+		  dev=excluded.dev, ino=excluded.ino, "offset"=excluded."offset", last_read=excluded.last_read`,
 		source, o.Dev, o.Ino, o.Offset, now)
 	return err
 }
@@ -300,7 +371,7 @@ func (s *Store) Counts() (map[string]int64, error) {
 	out := map[string]int64{}
 	for _, t := range []string{"machines", "workspaces", "sessions", "agents", "calls", "events", "tasks"} {
 		var n int64
-		if err := s.DB.QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
+		if err := s.QueryRow("SELECT COUNT(*) FROM " + t).Scan(&n); err != nil {
 			return nil, err
 		}
 		out[t] = n
@@ -325,7 +396,7 @@ func (s *Store) UpsertThread(sessionID, agentID string, it ThreadItem) error {
 	if it.TS > 0 {
 		ts = it.TS
 	}
-	_, err := s.DB.Exec(`
+	_, err := s.Exec(`
 		INSERT INTO agent_thread (session_id, agent_id, seq, ts, kind, text, hint)
 		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(session_id, agent_id, seq) DO NOTHING`,
@@ -335,7 +406,7 @@ func (s *Store) UpsertThread(sessionID, agentID string, it ThreadItem) error {
 
 // AgentThread devuelve el hilo de un agente en orden (acotado a los últimos N).
 func (s *Store) AgentThread(sessionID, agentID string, limit int) ([]ThreadItem, error) {
-	rows, err := s.DB.Query(`
+	rows, err := s.Query(`
 		SELECT seq, COALESCE(ts,0), kind, COALESCE(text,''), COALESCE(hint,'')
 		FROM agent_thread WHERE session_id = ? AND agent_id = ?
 		ORDER BY seq DESC LIMIT ?`, sessionID, agentID, limit)

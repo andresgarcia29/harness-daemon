@@ -33,6 +33,7 @@ import (
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/redact"
+	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
 // Overridables para tests (httptest) — en producción son los reales.
@@ -47,11 +48,11 @@ type Op struct {
 	Token string // por arranque; viaja en el HTML, vuelve en el header
 	WS    string // ruta del workspace
 	WSID  string
-	DB    *sql.DB
+	DB    store.Queryer // almacén dialecto-agnóstico (SQLite o Postgres)
 	Port  int
 }
 
-func NewOp(ws, wsID string, db *sql.DB, port int) *Op {
+func NewOp(ws, wsID string, db store.Queryer, port int) *Op {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return &Op{Token: hex.EncodeToString(b), WS: ws, WSID: wsID, DB: db, Port: port}
@@ -415,7 +416,13 @@ func (o *Op) OpConnect(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 500, "no pude guardar")
 		return
 	}
-	writeJSON(rw, 200, map[string]any{"ok": true, "provider": prov, "connected": true})
+	resp := map[string]any{"ok": true, "provider": prov, "connected": true}
+	if prov == "postgres" {
+		// El motor se elige AL ARRANCAR (openStore): el daemon vivo sigue en
+		// SQLite hasta reiniciar. Decirlo evita el "conecté pero no cambió nada".
+		resp["note"] = "Postgres validado y guardado. Reinicia el panel (make ui) para que el daemon use Postgres como almacén."
+	}
+	writeJSON(rw, 200, resp)
 }
 
 // pingPostgres valida un DSN abriendo la conexión y haciendo ping (10s). No
@@ -444,7 +451,7 @@ func Connections() map[string]bool {
 // SyncPrices cotiza desde OpenRouter los modelos OBSERVADOS sin precio y los
 // persiste en la tabla prices (source=openrouter). Corre al arranque (auto,
 // fail-open) y desde el botón. Cross-máquina: cada daemon sincroniza igual.
-func SyncPrices(db *sql.DB) (added, missing []string, err error) {
+func SyncPrices(db store.Queryer) (added, missing []string, err error) {
 	added, missing = []string{}, []string{}
 	rows, err := db.Query(`SELECT DISTINCT c.model FROM calls c
 		LEFT JOIN prices p ON p.model = c.model AND p.valid_from = 0
@@ -551,16 +558,21 @@ func (o *Op) OpSyncPrices(rw http.ResponseWriter, r *http.Request) {
 	writeJSON(rw, 200, map[string]any{"ok": true, "added": added, "missing": missing, "note": note})
 }
 
-// DBInfo: el estado REAL del almacén para la tarjeta de Conexiones.
-func DBInfo(db *sql.DB, path string) map[string]any {
-	info := map[string]any{"engine": "sqlite", "path": path}
-	if fi, err := os.Stat(path); err == nil {
-		info["size_bytes"] = fi.Size()
+// DBInfo: el estado REAL del almacén para la tarjeta de Conexiones. Reporta el
+// engine que de verdad respalda al daemon — SQLite (con la ruta y tamaño del
+// archivo) o Postgres (sin archivo: es un servidor).
+func DBInfo(st *store.Store, path string) map[string]any {
+	info := map[string]any{"engine": st.Dialect}
+	if st.Dialect == "sqlite" {
+		info["path"] = path
+		if fi, err := os.Stat(path); err == nil {
+			info["size_bytes"] = fi.Size()
+		}
 	}
 	var machines, calls, events int64
-	_ = db.QueryRow(`SELECT COUNT(*) FROM machines`).Scan(&machines)
-	_ = db.QueryRow(`SELECT COUNT(*) FROM calls`).Scan(&calls)
-	_ = db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&events)
+	_ = st.QueryRow(`SELECT COUNT(*) FROM machines`).Scan(&machines)
+	_ = st.QueryRow(`SELECT COUNT(*) FROM calls`).Scan(&calls)
+	_ = st.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&events)
 	info["machines"], info["calls"], info["events"] = machines, calls, events
 	return info
 }
