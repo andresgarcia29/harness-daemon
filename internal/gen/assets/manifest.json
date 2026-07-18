@@ -4,7 +4,7 @@
     "catalog/capabilities.json": "41fe09afe07367e9106f9abd6b34f2bc3cd937ceb283e65b143e8a54a44ab6da",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
     "prompts/discovery-enrichment.md": "e613f81e31e9ef128cb0968eacfee741a340377b6c0ca3912ff52cda08fe3b4a",
-    "scripts/discover.sh": "b7bd46497d466c28a3b5336a0f504c3b7a8a268ee783012689cc5eb0902107bc",
+    "scripts/discover.sh": "6696790ae0bd66663e1814ea3c5807288fbee8da446bf8e381d29c5e032ac9ea",
     "scripts/doctor.sh": "ace29b9c1b42c734d39cf6e1c5e30a08eb02d909fd581af8c7399d6b43c1e06b",
     "templates/CLAUDE.md.tmpl": "0b5fc0e0b1da8cd00bb6ea0fe452ec57a7b3a49bde0b9ece36cb1c2fa98d60e5",
     "templates/Makefile.tmpl": "f57ccfd469dff4454ae7102f73f3320b321003077c0c137fac38b5692e924b96",

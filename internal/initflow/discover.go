@@ -62,7 +62,28 @@ func (m *Manager) runDiscover() error {
 	m.mu.Unlock()
 	m.logs.Append("discover", fmt.Sprintf("✓ %d repos inventariados · hints de secretos: %v", inv.RepoCount, inv.SecretHints))
 	m.seedAnswersIfEmpty()
+	m.applyCoverage("discover")
 	return nil
+}
+
+// applyCoverage — tras un (re)discover, los services nuevos o re-clasificados
+// ganan abogado sin pisar el clustering existente.
+func (m *Manager) applyCoverage(step string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.st.Answers == nil || m.inv == nil {
+		return
+	}
+	cs, added := gen.EnsureServiceCoverage(m.st.Answers.Clusters, m.inv, m.st.RoleOverrides)
+	if len(added) == 0 {
+		return
+	}
+	m.st.Answers.Clusters = cs
+	for _, a := range added {
+		m.logs.Append(step, "servicio sin abogado: «"+a+"» — svc-"+a+" agregado por la regla de cobertura")
+	}
+	m.st.AnswersRev++
+	m.persistLocked()
 }
 
 // seedAnswersIfEmpty siembra el borrador determinista (una sola vez: si el
@@ -109,10 +130,15 @@ func (m *Manager) handleRole(body map[string]any) (any, int) {
 		m.st.RoleOverrides = map[string]string{}
 	}
 	m.st.RoleOverrides[repo] = role
-	// re-siembra clusters/DAG desde las reglas (con overrides aplicados)
+	// NO se re-siembra todo (pisaba el trabajo del enrich y tus ediciones):
+	// solo la regla de cobertura — si el repo ahora es service y no tiene
+	// abogado, se agrega; si dejó de serlo, su cluster queda y tú decides.
 	if m.st.Answers != nil {
-		m.st.Answers.Clusters = gen.SeedClusters(m.inv, m.st.RoleOverrides)
-		m.st.Answers.DAG = gen.SeedDAG(m.inv, m.st.RoleOverrides)
+		cs, added := gen.EnsureServiceCoverage(m.st.Answers.Clusters, m.inv, m.st.RoleOverrides)
+		m.st.Answers.Clusters = cs
+		for _, a := range added {
+			m.logs.Append("discover", "rol corregido: «"+a+"» ahora es service — abogado svc-"+a+" agregado")
+		}
 		m.st.AnswersRev++
 	}
 	m.persistLocked()

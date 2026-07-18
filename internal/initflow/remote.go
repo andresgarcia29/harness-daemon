@@ -379,6 +379,7 @@ func (m *Manager) remoteDiscover(ws string) error {
 	m.mu.Unlock()
 	m.logs.Append("discover", fmt.Sprintf("✓ %d repos inventariados en el VPS · hints: %v", inv.RepoCount, inv.SecretHints))
 	m.seedAnswersIfEmpty()
+	m.applyCoverage("discover")
 	return nil
 }
 

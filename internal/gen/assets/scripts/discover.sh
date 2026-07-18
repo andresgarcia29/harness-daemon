@@ -29,8 +29,10 @@ guess_role() { # guess_role <dir> <name> — imprime el rol en stdout
   # contratos: buf o dominancia de .proto
   if [ -f "$dir/buf.yaml" ] || [ -f "$dir/buf.gen.yaml" ]; then echo "contracts"; return; fi
 
-  # infra terraform: module (reutilizable) vs live (raíz aplicable)
-  if ls "$dir"/*.tf >/dev/null 2>&1 || find "$dir" -maxdepth 2 -name "*.tf" -print -quit 2>/dev/null | grep -q .; then
+  # infra terraform: module (reutilizable) vs live (raíz aplicable).
+  # maxdepth 4: los monorepos de infra viven en envs/prod/… y modules/x/… —
+  # a profundidad 2 no se veían y caían a ci-library (bug real de corvux).
+  if ls "$dir"/*.tf >/dev/null 2>&1 || find "$dir" -maxdepth 4 -name "*.tf" -not -path "*/.git/*" -print -quit 2>/dev/null | grep -q .; then
     if [ -f "$dir/variables.tf" ] || [ -f "$dir/outputs.tf" ] || echo "$name" | grep -qi "module"; then
       echo "infra-module"
     else
@@ -72,6 +74,17 @@ guess_role() { # guess_role <dir> <name> — imprime el rol en stdout
     return
   fi
 
+  # librería de charts helm (sin código de app: si tuviera go/py/ts ya habría
+  # salido arriba) — es familia infra, no ci-library
+  if find "$dir" -maxdepth 3 -name "Chart.yaml" -not -path "*/.git/*" -print -quit 2>/dev/null | grep -q .; then
+    echo "infra-module"; return
+  fi
+
+  # monorepo de librerías (pyproject/package.json/go.mod en subdirs, no raíz)
+  if find "$dir" -maxdepth 2 \( -name "pyproject.toml" -o -name "go.mod" -o -name "package.json" \) -not -path "*/.git/*" -print -quit 2>/dev/null | grep -q .; then
+    echo "library"; return
+  fi
+
   # librería de CI reusable (solo workflows)
   if [ -d "$dir/.github/workflows" ]; then echo "ci-library"; return; fi
 
@@ -92,7 +105,7 @@ scan_repo() {
   [ -f "$dir/package.json" ]   && langs+=("typescript")
   [ -f "$dir/pyproject.toml" ] && langs+=("python")
   [ -f "$dir/pubspec.yaml" ]   && langs+=("dart")
-  { ls "$dir"/*.tf >/dev/null 2>&1 || find "$dir" -maxdepth 2 -name "*.tf" -print -quit 2>/dev/null | grep -q .; } && langs+=("terraform")
+  { ls "$dir"/*.tf >/dev/null 2>&1 || find "$dir" -maxdepth 4 -name "*.tf" -not -path "*/.git/*" -print -quit 2>/dev/null | grep -q .; } && langs+=("terraform")
 
   { [ -f "$dir/buf.yaml" ] || [ -f "$dir/buf.gen.yaml" ]; } && signals+=("buf")
   find "$dir" -maxdepth 3 -name "Chart.yaml" -print -quit 2>/dev/null | grep -q . && signals+=("helm")
