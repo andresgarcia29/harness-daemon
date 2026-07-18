@@ -152,6 +152,7 @@ func (m *Manager) Public() *PublicState {
 		GitHub: m.st.GitHub, Repos: repos, Requirements: reqs,
 		Inventory: m.inv, Answers: m.st.Answers, AnswersRev: m.st.AnswersRev,
 		RoleOverrides: m.st.RoleOverrides, Recommendations: m.st.Recommendations,
+		Archaeology: append([]ArchState(nil), m.st.Archaeology...),
 		CompletedAt: m.st.CompletedAt,
 	}
 }

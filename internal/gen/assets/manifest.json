@@ -1,7 +1,8 @@
 {
-  "installer_commit": "bb1a662aefb3a107a74baa829d453345abea4f24",
+  "installer_commit": "a22ea8d75ce7368f5e61994017ecbbc3ce11c017",
   "files": {
     "catalog/capabilities.json": "41fe09afe07367e9106f9abd6b34f2bc3cd937ceb283e65b143e8a54a44ab6da",
+    "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
     "prompts/discovery-enrichment.md": "37203d31e728ff4dbff2170b5ed3c1b240c4b2140558677f8622f1a5a279d03c",
     "scripts/discover.sh": "b7bd46497d466c28a3b5336a0f504c3b7a8a268ee783012689cc5eb0902107bc",
     "scripts/doctor.sh": "ace29b9c1b42c734d39cf6e1c5e30a08eb02d909fd581af8c7399d6b43c1e06b",
@@ -64,7 +65,6 @@
     "templates/scripts/worktree-task.sh": "b8f352fb35be0fdebcd9de337e13e91d91c3ee180fa5b7bdd63a4a6af02c6ca3",
     "templates/semgrep-rules.yaml.tmpl": "4d0baa41b5beabdbc1de1b5f1cb10020ac1db851da9b0b07bbacc024cb452bc4",
     "templates/settings.json.tmpl": "696c8ceeac7db3609ecbc0bd2226c919b8ed4becfd95772974386c4ea734f496",
-    "templates/ui/__pycache__/server.cpython-310.pyc": "b89c1df0eea91449adba2fc5a1aaddffafa36d61ee627ad83ca7c4174c847512",
     "templates/ui/panel.sh": "b49416dcbf98eb356b4d40a8a95494f7da45e4b7ab5707190447f1eaa491c7f6",
     "templates/ui/pricing.json": "123bf4e6f3cf7f966bace7e9cf2c9bf29ad95b38e79a40e342423b2919229160",
     "templates/ui/server.py": "f3aa1e69a767e72b2ef771105bb4c140de562e400f3bc152848ee185db2385e7"

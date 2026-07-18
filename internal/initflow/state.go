@@ -50,6 +50,7 @@ type State struct {
 	AnswersRev     int               `json:"answers_rev,omitempty"`
 	RoleOverrides  map[string]string `json:"role_overrides,omitempty"`
 	Recommendations map[string]string `json:"recommendations,omitempty"` // campo → evidencia
+	Archaeology    []ArchState `json:"archaeology,omitempty"`
 	CompletedAt    int64       `json:"completed_at,omitempty"`
 }
 
@@ -124,6 +125,7 @@ type PublicState struct {
 	AnswersRev      int               `json:"answers_rev,omitempty"`
 	RoleOverrides   map[string]string `json:"role_overrides,omitempty"`
 	Recommendations map[string]string `json:"recommendations,omitempty"`
+	Archaeology     []ArchState       `json:"archaeology,omitempty"`
 	CompletedAt     int64             `json:"completed_at,omitempty"`
 }
 
