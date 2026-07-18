@@ -64,6 +64,8 @@ func main() {
 		os.Exit(generateCmd(rest))
 	case "discover":
 		os.Exit(discoverCmd(rest))
+	case "update":
+		os.Exit(updateCmd(rest))
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	// port=0 significa "no especificado": los comandos del daemon caen a 7718
