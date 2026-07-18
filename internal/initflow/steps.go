@@ -9,7 +9,10 @@ func (m *Manager) runnerFor(id string) runner {
 		return (*Manager).runClone
 	case "requirements":
 		return (*Manager).runRequirements
-	// F6: "discover", "enrich"
+	case "discover":
+		return (*Manager).runDiscover
+	case "enrich":
+		return (*Manager).runEnrich
 	// F7/F8: "generate", "archaeology" · F9: "mcps" · F10: "first-task", "finish"
 	default:
 		return nil
