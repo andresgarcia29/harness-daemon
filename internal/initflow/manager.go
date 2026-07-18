@@ -121,9 +121,12 @@ func (m *Manager) Public() *PublicState {
 	for i := range steps {
 		steps[i].LogsTail = m.logs.Tail(steps[i].ID, tailN)
 	}
+	repos := make([]RepoSel, len(m.st.Repos))
+	copy(repos, m.st.Repos)
 	return &PublicState{
 		Active: m.st.Active, Step: m.st.Current, Steps: steps,
-		WorkspacePath: m.st.Workspace, Target: m.st.Target, CompletedAt: m.st.CompletedAt,
+		WorkspacePath: m.st.Workspace, Target: m.st.Target,
+		GitHub: m.st.GitHub, Repos: repos, CompletedAt: m.st.CompletedAt,
 	}
 }
 
@@ -179,6 +182,16 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 		return m.handleBrowse(body)
 	case "target":
 		return m.handleTarget(body)
+	case "github":
+		return m.handleGithub(body)
+	case "github-orgs":
+		return m.handleGithubOrgs(body)
+	case "github-repos":
+		return m.handleGithubRepos(body)
+	case "repo-tags":
+		return m.handleRepoTags(body)
+	case "repos":
+		return m.handleRepoSelect(body)
 	case "step":
 		return m.handleStep(body)
 	default:
