@@ -203,6 +203,13 @@ func (m *Manager) advanceLocked() {
 
 // Handle procesa una acción del wizard y devuelve (respuesta, código HTTP).
 func (m *Manager) Handle(action string, body map[string]any) (any, int) {
+	m.mu.Lock()
+	done := !m.st.Active
+	m.mu.Unlock()
+	if done {
+		// el init terminó: el plano se apaga (ADR-0011) — 410 Gone
+		return map[string]any{"ok": false, "error": "el init terminó — el panel normal es tu casa ahora"}, 410
+	}
 	switch action {
 	case "workspace":
 		return m.handleWorkspace(body)
@@ -397,6 +404,10 @@ func (m *Manager) handleWorkspace(body map[string]any) (any, int) {
 	}
 	m.mu.Unlock()
 
+	if _, err := os.Stat(filepath.Join(norm, ".harness-version")); err == nil {
+		return map[string]any{"ok": false,
+			"error": "ese workspace YA tiene un harness instalado — usa `harness ui` para el panel o `harness generate --update` para actualizarlo"}, 409
+	}
 	created := false
 	if !exists {
 		if !boolv(body, "create") {
