@@ -44,7 +44,7 @@ func New(version string, adopt func(string) error) *Manager {
 			Current: "workspace", Steps: freshSteps()}
 		m.persistLocked()
 	}
-	if m.st.Workspace != "" {
+	if m.st.Workspace != "" && m.st.Target == "" {
 		if err := adopt(m.st.Workspace); err != nil {
 			m.setStepLocked("workspace", Fail, "", "no pude re-adoptar el workspace: "+err.Error())
 		}
@@ -54,11 +54,13 @@ func New(version string, adopt func(string) error) *Manager {
 }
 
 // loadInventory recarga el artefacto del discover si existe (resume).
+// En modo remoto no hay archivo local: el discover remoto re-puebla m.inv.
 func (m *Manager) loadInventory() {
 	m.mu.Lock()
 	ws := m.st.Workspace
+	remote := m.st.Target != ""
 	m.mu.Unlock()
-	if ws == "" {
+	if ws == "" || remote {
 		return
 	}
 	if inv, err := gen.LoadInventory(ws); err == nil {
@@ -124,7 +126,9 @@ func writeState(path string, st State) {
 }
 
 func (m *Manager) persistLocked() {
-	if m.st.Workspace != "" {
+	// con workspace REMOTO (Target != "") la ruta es del VPS: el canónico
+	// local es ConfigDir — jamás crear un espejo local de una ruta remota.
+	if m.st.Workspace != "" && m.st.Target == "" {
 		writeState(wsStatePath(m.st.Workspace), m.st)
 	}
 	// ConfigDir siempre lleva al menos el puntero (resume tras reinicio).
@@ -293,10 +297,21 @@ func (m *Manager) handleTarget(body map[string]any) (any, int) {
 		}
 	}
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.st.Workspace != "" && m.st.Target != name {
+		return map[string]any{"ok": false,
+			"error": "el init ya está anclado a un workspace en «" + orLocal(m.st.Target) + "» — no se cambia de máquina a medias"}, 409
+	}
 	m.st.Target = name
 	m.persistLocked()
-	m.mu.Unlock()
 	return map[string]any{"ok": true, "target": name}, 200
+}
+
+func orLocal(t string) string {
+	if t == "" {
+		return "esta máquina"
+	}
+	return t
 }
 
 func str(b map[string]any, k string) string {
@@ -380,37 +395,25 @@ func ancestorWritable(p string) bool {
 	}
 }
 
-func (m *Manager) handleWorkspace(body map[string]any) (any, int) {
-	norm, err := normalizeWS(str(body, "path"), boolv(body, "confirm_outside_home"))
+// WorkspaceStep — la parte de filesystem del paso 1, standalone: la usan el
+// handler local y `harness init-step workspace` (el MISMO código en un VPS).
+func WorkspaceStep(path string, create, dryRun, confirmOutside bool) (map[string]any, int) {
+	norm, err := normalizeWS(path, confirmOutside)
 	if err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}, 400
 	}
 	exists, writable, empty := probeDir(norm)
-	if boolv(body, "dry_run") {
+	if dryRun {
 		return map[string]any{"ok": true, "normalized": norm,
 			"exists": exists, "writable": writable, "empty": empty}, 200
 	}
-
-	m.mu.Lock()
-	if m.st.Workspace == norm { // idempotente: el refresh re-manda el paso 1
-		m.mu.Unlock()
-		return map[string]any{"ok": true, "workspace": norm, "created": false}, 200
-	}
-	if m.st.Workspace != "" {
-		cur := m.st.Workspace
-		m.mu.Unlock()
-		return map[string]any{"ok": false,
-			"error": "este init ya está anclado a " + cur + " — termina o borra ese init primero"}, 409
-	}
-	m.mu.Unlock()
-
 	if _, err := os.Stat(filepath.Join(norm, ".harness-version")); err == nil {
 		return map[string]any{"ok": false,
 			"error": "ese workspace YA tiene un harness instalado — usa `harness ui` para el panel o `harness generate --update` para actualizarlo"}, 409
 	}
 	created := false
 	if !exists {
-		if !boolv(body, "create") {
+		if !create {
 			return map[string]any{"ok": false, "error": "la carpeta no existe — manda create:true para crearla", "normalized": norm}, 400
 		}
 		if err := os.MkdirAll(norm, 0o755); err != nil {
@@ -423,16 +426,43 @@ func (m *Manager) handleWorkspace(body map[string]any) (any, int) {
 	if err := os.MkdirAll(filepath.Join(norm, "repos"), 0o755); err != nil {
 		return map[string]any{"ok": false, "error": "no pude crear repos/: " + err.Error()}, 500
 	}
+	return map[string]any{"ok": true, "workspace": norm, "created": created}, 200
+}
+
+func (m *Manager) handleWorkspace(body map[string]any) (any, int) {
+	if m.isRemote() {
+		return m.handleWorkspaceRemote(body)
+	}
+	dry := boolv(body, "dry_run")
+	norm, err := normalizeWS(str(body, "path"), boolv(body, "confirm_outside_home"))
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, 400
+	}
+	m.mu.Lock()
+	cur := m.st.Workspace
+	m.mu.Unlock()
+	if !dry {
+		if cur == norm && cur != "" { // idempotente: el refresh re-manda el paso 1
+			return map[string]any{"ok": true, "workspace": norm, "created": false}, 200
+		}
+		if cur != "" { // el anclaje se checa ANTES de tocar el filesystem
+			return map[string]any{"ok": false,
+				"error": "este init ya está anclado a " + cur + " — termina o borra ese init primero"}, 409
+		}
+	}
+	res, code := WorkspaceStep(norm, boolv(body, "create"), dry, true) // norm ya validó el home
+	if dry || code != 200 {
+		return res, code
+	}
 	if err := m.adopt(norm); err != nil {
 		return map[string]any{"ok": false, "error": "no pude adoptar el workspace: " + err.Error()}, 500
 	}
-
 	m.mu.Lock()
 	m.st.Workspace = norm
 	m.logs.Append("workspace", "workspace fijado en "+norm)
 	m.setStepLocked("workspace", OK, norm, "")
 	m.mu.Unlock()
-	return map[string]any{"ok": true, "workspace": norm, "created": created}, 200
+	return res, 200
 }
 
 // ── paso genérico: run / retry / skip ──

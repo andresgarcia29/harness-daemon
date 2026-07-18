@@ -17,15 +17,32 @@ import (
 // (/api/op/task — el workspace ya está adoptado). El runner solo VERIFICA el
 // artefacto: existe al menos una tarea. Saltable.
 
+// CountTasks — el verify por artefacto, standalone para el init-step remoto.
+func CountTasks(ws string) int {
+	entries, err := os.ReadDir(filepath.Join(ws, "tasks"))
+	if err != nil {
+		return 0
+	}
+	return len(entries)
+}
+
 func (m *Manager) runFirstTask() error {
 	m.mu.Lock()
 	ws := m.st.Workspace
 	m.mu.Unlock()
-	entries, err := os.ReadDir(filepath.Join(ws, "tasks"))
-	if err != nil || len(entries) == 0 {
+	n := 0
+	if m.isRemote() {
+		var err error
+		if n, err = m.remoteFirstTask(ws); err != nil {
+			return err
+		}
+	} else {
+		n = CountTasks(ws)
+	}
+	if n == 0 {
 		return errors.New("aún no hay tareas — crea una desde el formulario (o salta este paso)")
 	}
-	m.logs.Append("first-task", fmt.Sprintf("✓ %d tarea(s) en tasks/", len(entries)))
+	m.logs.Append("first-task", fmt.Sprintf("✓ %d tarea(s) en tasks/", n))
 	return nil
 }
 
@@ -33,15 +50,17 @@ func (m *Manager) runFirstTask() error {
 // Verde (0 fallos) → el plano de init se apaga (ADR-0011: al terminar, las
 // leyes de siempre vuelven a regir completas).
 
-func (m *Manager) runFinish() error {
-	m.mu.Lock()
-	ws := m.st.Workspace
-	m.mu.Unlock()
+// RunDoctor extrae y corre el doctor embebido sobre ws. Standalone: lo usan
+// el Manager local y `harness init-step finish` (remoto).
+func RunDoctor(ws string, log func(string)) error {
 	script, err := gen.Asset("scripts/doctor.sh")
 	if err != nil {
 		return err
 	}
 	path := filepath.Join(ws, ".harness", "init", "doctor.sh")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, script, 0o755); err != nil {
 		return err
 	}
@@ -59,12 +78,28 @@ func (m *Manager) runFinish() error {
 	sc := bufio.NewScanner(out)
 	for sc.Scan() {
 		if line := strings.TrimSpace(sc.Text()); line != "" {
-			m.logs.Append("finish", line)
+			log(line)
 			last = line
 		}
 	}
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("el doctor reporta fallos (%s) — corrígelos y reintenta, o revisa el log", last)
+	}
+	return nil
+}
+
+func (m *Manager) runFinish() error {
+	m.mu.Lock()
+	ws := m.st.Workspace
+	m.mu.Unlock()
+	if m.isRemote() {
+		if err := m.remoteFinish(ws); err != nil {
+			return err
+		}
+	} else {
+		if err := RunDoctor(ws, func(s string) { m.logs.Append("finish", s) }); err != nil {
+			return err
+		}
 	}
 	m.logs.Append("finish", "✓ doctor en verde — el harness está listo")
 	m.mu.Lock()

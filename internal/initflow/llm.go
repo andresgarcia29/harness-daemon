@@ -151,8 +151,14 @@ func (m *Manager) runEnrich() error {
 	).Replace(string(promptTmpl))
 
 	m.logs.Append("enrich", "consultando al modelo (clustering, DAG, principios)…")
+	// el enrichment solo necesita el inventory (va inline en el prompt): en
+	// remoto corre LOCAL con tu claude — la ruta del VPS no existe aquí
+	dir := ws
+	if m.isRemote() {
+		dir = ""
+	}
 	var out enrichOut
-	if err := newLLM(ws).runJSON(prompt, &out, func(s string) { m.logs.Append("enrich", s) }); err != nil {
+	if err := newLLM(dir).runJSON(prompt, &out, func(s string) { m.logs.Append("enrich", s) }); err != nil {
 		return fmt.Errorf("%v — puedes saltar este paso: los defaults deterministas ya están puestos", err)
 	}
 	m.mu.Lock()

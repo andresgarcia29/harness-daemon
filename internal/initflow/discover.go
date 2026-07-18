@@ -18,6 +18,9 @@ func (m *Manager) runDiscover() error {
 	m.mu.Lock()
 	ws := m.st.Workspace
 	m.mu.Unlock()
+	if m.isRemote() {
+		return m.remoteDiscover(ws)
+	}
 
 	script, err := gen.Asset("scripts/discover.sh")
 	if err != nil {
