@@ -51,6 +51,8 @@ type State struct {
 	RoleOverrides  map[string]string `json:"role_overrides,omitempty"`
 	Recommendations map[string]string `json:"recommendations,omitempty"` // campo → evidencia
 	Archaeology    []ArchState `json:"archaeology,omitempty"`
+	McpProbes      map[string]McpProbeState `json:"mcp_probes,omitempty"`
+	SecretKeys     map[string]bool          `json:"secret_keys,omitempty"` // clave → guardada (presencia, jamás valores)
 	CompletedAt    int64       `json:"completed_at,omitempty"`
 }
 
@@ -126,6 +128,8 @@ type PublicState struct {
 	RoleOverrides   map[string]string `json:"role_overrides,omitempty"`
 	Recommendations map[string]string `json:"recommendations,omitempty"`
 	Archaeology     []ArchState       `json:"archaeology,omitempty"`
+	McpProbes       map[string]McpProbeState `json:"mcp_probes,omitempty"`
+	SecretKeys      map[string]bool          `json:"secret_keys,omitempty"`
 	CompletedAt     int64             `json:"completed_at,omitempty"`
 }
 

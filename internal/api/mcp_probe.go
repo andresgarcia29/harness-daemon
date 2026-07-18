@@ -105,6 +105,13 @@ func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
 
 // probeMcpServer arranca un servidor MCP y le habla el protocolo. Docker o
 // binario da igual: ambos hablan JSON-RPC por stdio.
+// ProbeMcpCommand — sonda directa para el plano de init: valida un MCP (con
+// un secreto inyectado por env si aplica) ANTES de persistir nada. Mismo
+// handshake JSON-RPC honesto que OpProbeMcp.
+func ProbeMcpCommand(ws, command string, args []string, env map[string]string) McpProbe {
+	return probeMcpServer(ws, mcpConf{Command: command, Args: args, Env: env})
+}
+
 func probeMcpServer(ws string, sv mcpConf) McpProbe {
 	start := time.Now()
 	p := McpProbe{At: time.Now().UTC().Format(time.RFC3339)}

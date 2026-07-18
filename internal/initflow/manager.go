@@ -153,6 +153,7 @@ func (m *Manager) Public() *PublicState {
 		Inventory: m.inv, Answers: m.st.Answers, AnswersRev: m.st.AnswersRev,
 		RoleOverrides: m.st.RoleOverrides, Recommendations: m.st.Recommendations,
 		Archaeology: append([]ArchState(nil), m.st.Archaeology...),
+		McpProbes:   m.st.McpProbes, SecretKeys: m.st.SecretKeys,
 		CompletedAt: m.st.CompletedAt,
 	}
 }
@@ -229,6 +230,14 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 		return m.handleAnswers(body)
 	case "answers-confirm":
 		return m.handleAnswersConfirm(body)
+	case "catalog":
+		return m.handleCatalog(body)
+	case "capability":
+		return m.handleCapability(body)
+	case "mcp-secret":
+		return m.handleMcpSecret(body)
+	case "probe-mcp":
+		return m.handleProbeInit(body)
 	case "step":
 		return m.handleStep(body)
 	default:
