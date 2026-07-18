@@ -13,7 +13,9 @@ func (m *Manager) runnerFor(id string) runner {
 		return (*Manager).runDiscover
 	case "enrich":
 		return (*Manager).runEnrich
-	// F7/F8: "generate", "archaeology" · F9: "mcps" · F10: "first-task", "finish"
+	case "generate":
+		return (*Manager).runGenerate
+	// F8: "archaeology" · F9: "mcps" · F10: "first-task", "finish"
 	default:
 		return nil
 	}

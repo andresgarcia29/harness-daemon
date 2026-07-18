@@ -20,6 +20,25 @@ var mimes = map[string]string{
 	".png": "image/png", ".ico": "image/x-icon", ".map": "application/json",
 }
 
+// DistFiles devuelve el build completo como mapa ruta→contenido (rutas
+// relativas a dist/). Lo usa el generador para vendorear el panel en las
+// instancias — una sola copia de la verdad, la del binario.
+func DistFiles() (map[string][]byte, error) {
+	out := map[string][]byte{}
+	err := fs.WalkDir(dist, "dist", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := dist.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		out[strings.TrimPrefix(p, "dist/")] = b
+		return nil
+	})
+	return out, err
+}
+
 // Handler sirve el build. index.html en "/", y /assets/* directo. Fuera de
 // dist/ → 404 (el embed ya lo garantiza: no hay ".." que escape).
 // opToken se inyecta en el HTML (plano de operar, ADR-0010).

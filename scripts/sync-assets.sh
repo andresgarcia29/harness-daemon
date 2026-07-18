@@ -45,6 +45,7 @@ build_assets() { # $1 = destino (un dir "assets" recién creado)
   # templates sin el fuente del frontend ni el dist (el dist ya viaja en webui)
   (cd "$INSTALLER/templates" && find . -type f \
       ! -path "./ui/web/*" ! -path "./ui/dist/*" \
+      ! -name "*.pyc" ! -path "*__pycache__*" ! -name ".DS_Store" \
       -exec sh -c 'mkdir -p "$0/$(dirname "$1")" && cp "$1" "$0/$1"' "$out/templates" {} \;)
   cp "$INSTALLER/scripts/discover.sh" "$INSTALLER/scripts/doctor.sh" "$out/scripts/"
   yaml2json "$INSTALLER/catalog/capabilities.yaml" > "$out/catalog/capabilities.json"

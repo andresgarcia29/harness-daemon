@@ -58,6 +58,13 @@ func main() {
 		}
 		cmd, rest = rest[0], rest[1:]
 	}
+	// generate/discover parsean sus propios flags (tienen set propio)
+	switch cmd {
+	case "generate":
+		os.Exit(generateCmd(rest))
+	case "discover":
+		os.Exit(discoverCmd(rest))
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	// port=0 significa "no especificado": los comandos del daemon caen a 7718
 	// (legacy) y los del panel resuelven por config.json → 7180 (ADR-0011).
