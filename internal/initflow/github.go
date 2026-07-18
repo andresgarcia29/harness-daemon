@@ -92,9 +92,9 @@ func (m *Manager) handleGithubRepos(body map[string]any) (any, int) {
 	if err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}, 400
 	}
-	page := 1
-	if p, ok := body["page"].(float64); ok && p >= 1 {
-		page = int(p)
+	page := intv(body, "page")
+	if page < 1 {
+		page = 1
 	}
 	user := ""
 	if m.st.GitHub != nil {

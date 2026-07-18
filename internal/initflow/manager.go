@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/andresgarcia29/harness-daemon/internal/gen"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 )
 
@@ -25,6 +26,8 @@ type Manager struct {
 	// resolveTarget valida el NOMBRE de un target SSH (main lo inyecta con
 	// api.ResolveTarget para no crear ciclo de imports). nil = sin targets.
 	resolveTarget func(name string) (string, bool)
+
+	inv *gen.Inventory // inventario cargado (artefacto <ws>/inventory.json)
 }
 
 // SetTargetResolver inyecta el validador de targets (api.ResolveTarget).
@@ -45,8 +48,24 @@ func New(version string, adopt func(string) error) *Manager {
 		if err := adopt(m.st.Workspace); err != nil {
 			m.setStepLocked("workspace", Fail, "", "no pude re-adoptar el workspace: "+err.Error())
 		}
+		m.loadInventory()
 	}
 	return m
+}
+
+// loadInventory recarga el artefacto del discover si existe (resume).
+func (m *Manager) loadInventory() {
+	m.mu.Lock()
+	ws := m.st.Workspace
+	m.mu.Unlock()
+	if ws == "" {
+		return
+	}
+	if inv, err := gen.LoadInventory(ws); err == nil {
+		m.mu.Lock()
+		m.inv = inv
+		m.mu.Unlock()
+	}
 }
 
 // Attach carga un init a medias dentro de un workspace ya adoptado (daemon
@@ -57,6 +76,7 @@ func Attach(version, ws string, adopt func(string) error) *Manager {
 		return nil
 	}
 	m := &Manager{version: version, adopt: adopt, logs: NewLogBuffer(), st: st}
+	m.loadInventory()
 	return m
 }
 
@@ -130,6 +150,8 @@ func (m *Manager) Public() *PublicState {
 		Active: m.st.Active, Step: m.st.Current, Steps: steps,
 		WorkspacePath: m.st.Workspace, Target: m.st.Target,
 		GitHub: m.st.GitHub, Repos: repos, Requirements: reqs,
+		Inventory: m.inv, Answers: m.st.Answers, AnswersRev: m.st.AnswersRev,
+		RoleOverrides: m.st.RoleOverrides, Recommendations: m.st.Recommendations,
 		CompletedAt: m.st.CompletedAt,
 	}
 }
@@ -200,6 +222,12 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 		return m.handleRequirementsCheck(body)
 	case "install":
 		return m.handleInstall(body)
+	case "role":
+		return m.handleRole(body)
+	case "answers":
+		return m.handleAnswers(body)
+	case "answers-confirm":
+		return m.handleAnswersConfirm(body)
 	case "step":
 		return m.handleStep(body)
 	default:
@@ -261,6 +289,17 @@ func str(b map[string]any, k string) string {
 func boolv(b map[string]any, k string) bool {
 	v, _ := b[k].(bool)
 	return v
+}
+
+// intv acepta float64 (JSON) e int (tests/uso interno).
+func intv(b map[string]any, k string) int {
+	switch v := b[k].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return 0
 }
 
 // ── paso workspace ──

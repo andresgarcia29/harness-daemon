@@ -10,6 +10,8 @@
 //   - Todo paso es idempotente y reanudable: re-entrar re-verifica.
 package initflow
 
+import "github.com/andresgarcia29/harness-daemon/internal/gen"
+
 type Status string
 
 const (
@@ -44,6 +46,10 @@ type State struct {
 	GitHub         *GHState    `json:"github,omitempty"`
 	Repos          []RepoSel   `json:"repos,omitempty"`
 	Requirements   []ReqState  `json:"requirements,omitempty"`
+	Answers        *gen.Answers      `json:"answers,omitempty"`
+	AnswersRev     int               `json:"answers_rev,omitempty"`
+	RoleOverrides  map[string]string `json:"role_overrides,omitempty"`
+	Recommendations map[string]string `json:"recommendations,omitempty"` // campo → evidencia
 	CompletedAt    int64       `json:"completed_at,omitempty"`
 }
 
@@ -113,7 +119,12 @@ type PublicState struct {
 	GitHub        *GHState    `json:"github,omitempty"`
 	Repos         []RepoSel   `json:"repos,omitempty"`
 	Requirements  []ReqState  `json:"requirements,omitempty"`
-	CompletedAt   int64       `json:"completed_at,omitempty"`
+	Inventory       *gen.Inventory    `json:"inventory,omitempty"`
+	Answers         *gen.Answers      `json:"answers,omitempty"`
+	AnswersRev      int               `json:"answers_rev,omitempty"`
+	RoleOverrides   map[string]string `json:"role_overrides,omitempty"`
+	Recommendations map[string]string `json:"recommendations,omitempty"`
+	CompletedAt     int64             `json:"completed_at,omitempty"`
 }
 
 // runner es la implementación de un paso. Se registran por fase de desarrollo
