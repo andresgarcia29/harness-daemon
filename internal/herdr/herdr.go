@@ -11,9 +11,11 @@ package herdr
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/redact"
@@ -53,16 +55,31 @@ type Agent struct {
 	Cwd         string `json:"cwd"`
 }
 
-// State es lo que /api/herdr devuelve. Available=false → herdr no está (el
-// panel esconde la vista con gracia). Cross-workspace a propósito.
+// State es lo que /api/herdr devuelve. Available=false → el server de herdr no
+// corre (el panel esconde la vista con gracia). Installed distingue "no está el
+// binario" de "está pero el server no corre" — en el 2º caso ofrecemos activarlo.
+// Cross-workspace a propósito.
 type State struct {
-	Available  bool        `json:"available"`
+	Available  bool        `json:"available"` // el server corre y respondió el snapshot
+	Installed  bool        `json:"installed"` // el binario herdr está en el PATH
 	Version    string      `json:"version"`
 	Reason     string      `json:"reason,omitempty"`
 	Workspaces []Workspace `json:"workspaces"`
 	Tabs       []Tab       `json:"tabs"`
 	Panes      []Pane      `json:"panes"`
 	Agents     []Agent     `json:"agents"`
+	Sessions   []Session   `json:"sessions"` // sesiones de herdr (viven aunque el server esté parado)
+}
+
+// Session es una sesión de herdr (el multiplexor persistente). Es lo que
+// mantiene VIVAS las terminales: si running=false quedó como registro histórico
+// y se puede borrar. Se lee con `herdr session list`, que responde aunque el
+// server no esté corriendo.
+type Session struct {
+	Name    string `json:"name"`
+	Running bool   `json:"running"`
+	Default bool   `json:"default"`
+	Dir     string `json:"dir,omitempty"`
 }
 
 func run(timeout time.Duration, args ...string) ([]byte, error) {
@@ -72,18 +89,56 @@ func run(timeout time.Duration, args ...string) ([]byte, error) {
 }
 
 // Snapshot lee el estado vivo. Fail-open: si herdr no está o el server no
-// corre, devuelve Available:false con la razón — jamás tumba al daemon.
+// corre, devuelve Available:false con la razón — jamás tumba al daemon. Las
+// sesiones se leen siempre (aunque el server esté parado) para poder verlas,
+// pararlas, borrarlas y ofrecer "activar herdr".
 func Snapshot() State {
-	if _, err := exec.LookPath("herdr"); err != nil {
-		return State{Available: false, Reason: "herdr no está instalado en esta máquina",
-			Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{}}
+	empty := func() State {
+		return State{Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{}, Sessions: []Session{}}
 	}
+	if _, err := exec.LookPath("herdr"); err != nil {
+		st := empty()
+		st.Reason = "herdr no está instalado en esta máquina"
+		return st
+	}
+	sessions := sessionList()
 	out, err := run(4*time.Second, "api", "snapshot")
 	if err != nil {
-		return State{Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{},
-			Reason: "el server de herdr no está corriendo — lanza `herdr` para arrancarlo"}
+		st := empty()
+		st.Installed = true
+		st.Sessions = sessions
+		st.Reason = "el server de herdr no está corriendo — actívalo para ver tus terminales en vivo"
+		return st
 	}
-	return parse(out)
+	st := parse(out)
+	st.Installed = true
+	st.Sessions = sessions
+	return st
+}
+
+// sessionList lee `herdr session list --json`. Responde aunque el server esté
+// parado (por eso una sesión "stopped" sigue apareciendo hasta que se borra).
+func sessionList() []Session {
+	out, err := run(3*time.Second, "session", "list", "--json")
+	if err != nil {
+		return []Session{}
+	}
+	var env struct {
+		Sessions []struct {
+			Name    string `json:"name"`
+			Running bool   `json:"running"`
+			Default bool   `json:"default"`
+			Dir     string `json:"session_dir"`
+		} `json:"sessions"`
+	}
+	if json.Unmarshal(out, &env) != nil {
+		return []Session{}
+	}
+	ss := make([]Session, 0, len(env.Sessions))
+	for _, s := range env.Sessions {
+		ss = append(ss, Session{Name: s.Name, Running: s.Running, Default: s.Default, Dir: s.Dir})
+	}
+	return ss
 }
 
 // parse traduce la respuesta de `herdr api snapshot` a nuestro State.
@@ -207,6 +262,35 @@ func SessionStop(name string) error {
 	}
 	_, err := run(6*time.Second, "session", "stop", name)
 	return err
+}
+
+// SessionDelete borra una sesión de herdr (el registro que "nunca se borra").
+// herdr sólo deja borrar sesiones paradas; si está corriendo, herdr devuelve
+// error y lo propagamos.
+func SessionDelete(name string) error {
+	if name == "" {
+		return fmt.Errorf("falta el nombre de la sesión")
+	}
+	_, err := run(6*time.Second, "session", "delete", name)
+	return err
+}
+
+// ServerStart arranca el server de herdr HEADLESS (sin TUI) y DESACOPLADO del
+// daemon (Setsid: sobrevive aunque el daemon reinicie), tal como el usuario
+// quiere "activarlo por debajo". Idempotente-ish: si ya corre, herdr no abre
+// otro. La salida se descarta.
+func ServerStart() error {
+	if _, err := exec.LookPath("herdr"); err != nil {
+		return fmt.Errorf("herdr no está instalado en esta máquina")
+	}
+	cmd := exec.Command("herdr", "server")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }() // sin zombies
+	return nil
 }
 
 // PaneRead devuelve el terminal EN VIVO de un pane (redactado — una terminal

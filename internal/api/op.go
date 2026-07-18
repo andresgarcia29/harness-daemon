@@ -525,11 +525,56 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action, id := s(b, "action"), s(b, "id")
+	st := herdr.Snapshot()
+
+	// Acciones que funcionan con el server PARADO (no requieren snapshot vivo):
+	// arrancar el server, y borrar una sesión histórica.
+	switch action {
+	case "start-server":
+		if err := herdr.ServerStart(); err != nil {
+			fail(rw, 500, "no pude activar herdr: "+redact.Clip(err.Error(), 120))
+			return
+		}
+		o.emit("decision", "el humano activó el server de herdr desde el panel", "")
+		writeJSON(rw, 200, map[string]any{"ok": true, "action": action})
+		return
+	case "delete-session":
+		if id == "" {
+			fail(rw, 400, "falta el nombre de la sesión")
+			return
+		}
+		// validar contra la lista de sesiones y rechazar borrar una corriendo
+		var found, running, isDefault bool
+		for _, se := range st.Sessions {
+			if se.Name == id {
+				found, running, isDefault = true, se.Running, se.Default
+			}
+		}
+		if !found {
+			fail(rw, 404, "esa sesión ya no existe")
+			return
+		}
+		if isDefault {
+			fail(rw, 400, "la sesión default de herdr no se puede borrar — sólo pararla")
+			return
+		}
+		if running {
+			fail(rw, 409, "esa sesión está corriendo — párala antes de borrarla")
+			return
+		}
+		if err := herdr.SessionDelete(id); err != nil {
+			fail(rw, 500, "herdr no pudo borrarla: "+redact.Clip(err.Error(), 120))
+			return
+		}
+		o.emit("decision", "el humano borró la sesión de herdr «"+id+"» desde el panel", "")
+		writeJSON(rw, 200, map[string]any{"ok": true, "action": action, "id": id})
+		return
+	}
+
 	if id == "" {
 		fail(rw, 400, "falta el id")
 		return
 	}
-	st := herdr.Snapshot()
 	if !st.Available {
 		fail(rw, 400, "herdr no está corriendo")
 		return
@@ -556,7 +601,11 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "stop-session":
-		valid = true // el nombre de la sesión no vive en el snapshot; herdr valida
+		for _, se := range st.Sessions {
+			if se.Name == id {
+				valid = true
+			}
+		}
 	default:
 		fail(rw, 400, "acción desconocida")
 		return
