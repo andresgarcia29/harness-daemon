@@ -103,19 +103,45 @@ func TestAnswersPatchConRev(t *testing.T) {
 	}
 }
 
-func TestRoleOverrideReDeriva(t *testing.T) {
+func TestRoleOverrideNoDestructivo(t *testing.T) {
 	setupEnv(t)
 	m := New("t", (&adoptSpy{}).fn)
 	wsConRepos(t, m)
 	runStepOK(t, m, "discover")
+	// corregir un rol JAMÁS borra clusters (pisaba el enrich y tus ediciones):
+	// atlas→library deja svc-atlas; tú lo quitas en Agentes si quieres
 	if _, code := m.Handle("role", map[string]any{"repo": "atlas", "role": "library"}); code != 200 {
 		t.Fatal("override")
 	}
-	p := m.Public()
-	for _, c := range p.Answers.Clusters {
+	found := false
+	for _, c := range m.Public().Answers.Clusters {
 		if c.Agent == "svc-atlas" {
-			t.Fatal("atlas como library ya no lleva abogado")
+			found = true
 		}
+	}
+	if !found {
+		t.Fatal("el override no debe borrar clusters existentes")
+	}
+	// un repo SIN cluster que se vuelve service SÍ gana abogado (cobertura):
+	// primero saca tf-core del cluster infra vía patch…
+	rev := m.Public().AnswersRev
+	if _, code := m.Handle("answers", map[string]any{"rev": rev, "patch": map[string]any{
+		"clusters": []any{map[string]any{"agent": "svc-atlas", "kind": "service", "repos": []any{"atlas"}}},
+	}}); code != 200 {
+		t.Fatal("patch clusters")
+	}
+	// …y al reclasificarlo, la cobertura le da su abogado
+	if _, code := m.Handle("role", map[string]any{"repo": "tf-core", "role": "service"}); code != 200 {
+		t.Fatal("override a service")
+	}
+	found = false
+	for _, c := range m.Public().Answers.Clusters {
+		if c.Agent == "svc-tf-core" && c.Owns != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("volverse service agrega abogado: %+v", m.Public().Answers.Clusters)
 	}
 	if _, code := m.Handle("role", map[string]any{"repo": "atlas", "role": "yolo"}); code != 400 {
 		t.Fatal("rol inválido")
