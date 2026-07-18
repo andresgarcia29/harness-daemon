@@ -555,6 +555,50 @@ func herdrClientFor(rw http.ResponseWriter, b map[string]any) (herdr.Client, boo
 	return herdr.Remote(ssh), true
 }
 
+// OpArchive oculta/reaparece una sesión o tarea de las listas del panel (limpiar
+// "basura" vieja) SIN borrar los archivos del usuario (transcripts, dirs de
+// tarea). Reversible; el colector no lo revierte (su UPSERT no toca archived).
+func (o *Op) OpArchive(rw http.ResponseWriter, r *http.Request) {
+	b, ok := o.Guard(rw, r)
+	if !ok {
+		return
+	}
+	kind, id := s(b, "kind"), s(b, "id")
+	if id == "" {
+		fail(rw, 400, "falta el id")
+		return
+	}
+	archived := 1
+	if v, isb := b["archived"].(bool); isb && !v {
+		archived = 0
+	}
+	var res sql.Result
+	var err error
+	switch kind {
+	case "session":
+		res, err = o.DB.Exec(`UPDATE sessions SET archived=? WHERE id=?`, archived, id)
+	case "task":
+		res, err = o.DB.Exec(`UPDATE tasks SET archived=? WHERE workspace_id=? AND id=?`, archived, o.WSID, id)
+	default:
+		fail(rw, 400, "kind inválido (session|task)")
+		return
+	}
+	if err != nil {
+		fail(rw, 500, "no se pudo archivar")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		fail(rw, 404, "ese elemento ya no existe")
+		return
+	}
+	verb := "archivé"
+	if archived == 0 {
+		verb = "restauré"
+	}
+	o.emit("decision", "el humano "+verb+" un "+kind+" desde el panel: "+id, "")
+	writeJSON(rw, 200, map[string]any{"ok": true})
+}
+
 // OpTargets administra los destinos remotos (VPS) por SSH: add / remove. El
 // alias/host se valida en AddTarget; la llave la maneja OpenSSH, nunca el daemon.
 func (o *Op) OpTargets(rw http.ResponseWriter, r *http.Request) {
