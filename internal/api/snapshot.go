@@ -51,7 +51,9 @@ type session struct {
 	// pero herdr no lo confirma (terminó hace nada o corre fuera de herdr);
 	// "" = en reposo. Lo llena EnrichLiveness. El mtime ya no miente "trabajando".
 	LiveBy string `json:"live_by"`
-	Cwd    string `json:"-"` // interno: para cruzar con pane.cwd de herdr
+	// cwd de la sesión: ancla su tarea (worktrees/<id>/) y se cruza con pane.cwd
+	// de herdr. Ahora expuesto para agrupar sesiones dentro de su tarea.
+	Cwd string `json:"cwd,omitempty"`
 }
 type tokens struct {
 	Out   int64 `json:"out"`
