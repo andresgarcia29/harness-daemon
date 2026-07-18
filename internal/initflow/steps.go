@@ -17,7 +17,9 @@ func (m *Manager) runnerFor(id string) runner {
 		return (*Manager).runGenerate
 	case "archaeology":
 		return (*Manager).runArchaeology
-	// F9: "mcps" · F10: "first-task", "finish"
+	case "mcps":
+		return (*Manager).runMcps
+	// F10: "first-task", "finish"
 	default:
 		return nil
 	}
