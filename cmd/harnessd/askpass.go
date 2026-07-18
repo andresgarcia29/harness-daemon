@@ -24,6 +24,14 @@ func askpassCmd(args []string) int {
 		return 0
 	}
 	switch os.Getenv("HARNESS_ASKPASS_SOURCE") {
+	case "ssh-env":
+		// instalación de llave SSH (api.InstallSSHKey): la contraseña viaja
+		// por env del proceso ssh, se usa una vez y se descarta
+		pw := os.Getenv("HARNESS_SSH_PASSWORD")
+		if pw == "" {
+			return 1
+		}
+		fmt.Println(pw)
 	case "gh":
 		bin := os.Getenv("HARNESS_GH_BIN")
 		if bin == "" {
