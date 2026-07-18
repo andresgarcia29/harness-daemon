@@ -579,6 +579,12 @@ func (o *Op) OpArchive(rw http.ResponseWriter, r *http.Request) {
 		res, err = o.DB.Exec(`UPDATE sessions SET archived=? WHERE id=?`, archived, id)
 	case "task":
 		res, err = o.DB.Exec(`UPDATE tasks SET archived=? WHERE workspace_id=? AND id=?`, archived, o.WSID, id)
+		// CASCADA: una tarea contiene sus sesiones (las que corren en su worktree).
+		// Archivar/restaurar la tarea arrastra sus sesiones — así no queda "basura"
+		// suelta. Se enlazan por cwd dentro de worktrees/<id>/.
+		if err == nil {
+			_, _ = o.DB.Exec(`UPDATE sessions SET archived=? WHERE cwd LIKE '%/worktrees/' || ? || '/%'`, archived, id)
+		}
 	default:
 		fail(rw, 400, "kind inválido (session|task)")
 		return
