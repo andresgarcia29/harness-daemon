@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# bootstrap.sh — onboarding del harness en UNA pasada, idempotente.
+# Instala/verifica las dependencias ELEGIDAS en la entrevista, pide el
+# token de secretos (fuera del chat), materializa .secrets y corre el
+# doctor. Se puede correr N veces: solo actúa sobre lo que falta.
+#
+# Uso: bootstrap.sh [--check] [--skip-secrets]
+#   --check         solo reporta qué falta, no instala nada
+#   --skip-secrets  no toca token ni .secrets
+set -uo pipefail
+WS="$(cd "$(dirname "$0")/.." && pwd)"
+CHECK=0; SKIP_SECRETS=0; MISSING=0; INSTALLED=0
+for a in "$@"; do case "$a" in
+  --check) CHECK=1 ;;
+  --skip-secrets) SKIP_SECRETS=1 ;;
+esac; done
+
+ok()   { echo "✅ $1"; }
+inst() { echo "📦 instalando: $1"; }
+warn() { echo "⚠️  $1"; }
+
+# link_into_path <bin> — go install/uv tool instalan fuera del PATH típico;
+# busca el binario recién instalado y enlázalo al prefix de brew (ya en PATH)
+link_into_path() {
+  local bin="$1" cand dest
+  dest="$(brew --prefix 2>/dev/null)/bin"
+  [ -d "$dest" ] || return 1
+  for cand in "$(go env GOPATH 2>/dev/null)/bin/$bin" "$HOME/go/bin/$bin" "$HOME/.local/bin/$bin"; do
+    [ -x "$cand" ] && { ln -sf "$cand" "$dest/$bin"; ok "$bin enlazado a $dest (estaba fuera del PATH)"; return 0; }
+  done
+  return 1
+}
+
+# ensure <bin> <cmd de instalación...> — instala si falta (o reporta en --check)
+ensure() {
+  local bin="$1"; shift
+  if command -v "$bin" >/dev/null 2>&1; then ok "$bin"; return 0; fi
+  MISSING=$((MISSING+1))
+  if [ "$CHECK" -eq 1 ]; then warn "falta: $bin (instalaría: $*)"; return 0; fi
+  inst "$bin ($*)"
+  if "$@"; then
+    if command -v "$bin" >/dev/null 2>&1 || link_into_path "$bin"; then
+      INSTALLED=$((INSTALLED+1)); ok "$bin instalado"
+    else
+      warn "$bin instalado pero no lo encuentro — agrega ~/go/bin y ~/.local/bin a tu PATH"
+    fi
+  else
+    warn "falló la instalación de $bin — instálalo a mano: $*"
+  fi
+}
+
+# require <bin> <instrucción> — NO auto-instala (SDKs pesados); solo verifica
+require() {
+  local bin="$1"; shift
+  command -v "$bin" >/dev/null 2>&1 && ok "$bin" || { MISSING=$((MISSING+1)); warn "falta: $bin — instalación manual: $*"; }
+}
+
+echo "══ bootstrap: dependencias del harness ══"
+# ── núcleo (siempre) ──────────────────────────────────────────────────
+ensure jq brew install jq
+
+# ── elegidas en la entrevista (generado desde el catálogo) ────────────
+{{ENSURE_LINES}}
+# Ejemplos del formato que instancia el generador:
+#   ensure gh brew install gh
+#   ensure semgrep brew install semgrep
+#   ensure d2 brew install d2
+#   ensure bd brew install beads
+#   ensure gitleaks brew install gitleaks
+#   ensure go-arch-lint go install github.com/fe3dback/go-arch-lint@latest
+#   ensure gotestsum go install gotest.tools/gotestsum@latest
+#   ensure depcruise npm i -g dependency-cruiser
+#   ensure diff-cover uv tool install diff-cover
+#   ensure lint-imports uv tool install import-linter
+#   require flutter "https://docs.flutter.dev/get-started"
+#   require gcloud "https://cloud.google.com/sdk/docs/install"
+#   require kubectl "gcloud components install kubectl"
+
+# PATHs típicos de go/uv/npm por si esta shell no los tiene
+case ":$PATH:" in *":$HOME/go/bin:"*) ;; *) warn 'agrega $HOME/go/bin a tu PATH (binarios de go install)';; esac
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) warn 'agrega $HOME/.local/bin a tu PATH (binarios de uv tool)';; esac
+
+# ── secretos ({{SECRETS_SOURCE}}) ─────────────────────────────────────
+if [ "$SKIP_SECRETS" -eq 0 ] && [ "$CHECK" -eq 0 ]; then
+  echo "══ bootstrap: secretos ══"
+  TOKFILE="$HOME/.config/harness/vault-token"
+  NEED_TOKEN=0
+  if [ "{{SECRETS_SOURCE}}" = "vault" ]; then
+    if [ ! -f "$TOKFILE" ]; then
+      NEED_TOKEN=1
+    elif command -v vault >/dev/null 2>&1; then
+      # vigencia: si el token murió, pedirlo de nuevo (fue el bug clásico)
+      VAULT_ADDR="{{VAULT_ADDR}}" VAULT_TOKEN="$(cat "$TOKFILE")" vault token lookup >/dev/null 2>&1 \
+        || { warn "el token de Vault existente está EXPIRADO o sin permisos — hay que renovarlo"; NEED_TOKEN=1; }
+    fi
+  fi
+  if [ "$NEED_TOKEN" -eq 1 ]; then
+    cat <<'TOKHELP'
+──────────────────────────────────────────────────────────────
+Necesitas un periodic token de Vault. ¿Cómo conseguirlo?
+ · Con acceso a Vault:
+     export VAULT_ADDR={{VAULT_ADDR}}
+     vault login -method=<tu método: oidc|userpass|github>
+     vault token create -period=768h -orphan \
+       -policy=<policies del harness> -field=token
+   (copia el token que imprime)
+ · Sin acceso: pídeselo a quien administre Vault.
+El token vive en ~/.config/harness/vault-token — nunca en el repo.
+──────────────────────────────────────────────────────────────
+TOKHELP
+    if [ -t 0 ]; then
+      # el valor NUNCA pasa por el agente: lo tecleas tú directo al archivo
+      mkdir -p "$(dirname "$TOKFILE")"
+      printf "pega tu periodic token de Vault (no se muestra): "
+      IFS= read -rs VTOK; echo
+      if [ -n "$VTOK" ]; then
+        printf '%s' "$VTOK" > "$TOKFILE"; chmod 600 "$TOKFILE"
+        if command -v vault >/dev/null 2>&1 && VAULT_ADDR="{{VAULT_ADDR}}" VAULT_TOKEN="$VTOK" vault token lookup >/dev/null 2>&1; then
+          ok "token guardado y VALIDADO"
+        else
+          warn "token guardado pero no pude validarlo (¿permisos/red?) — secrets.sh pull te dirá"
+        fi
+      else
+        warn "sin token — colócalo después en $TOKFILE (chmod 600)"
+      fi
+      unset VTOK
+    else
+      warn "sin TTY: coloca tu token en $TOKFILE (chmod 600) y re-corre"
+    fi
+  fi
+  if [ -x "$WS/scripts/secrets.sh" ]; then
+    bash "$WS/scripts/secrets.sh" pull || warn "no pude materializar .secrets — revisa el token/red y re-corre scripts/secrets.sh pull"
+  fi
+fi
+
+# ── veredicto ─────────────────────────────────────────────────────────
+echo "══ bootstrap: doctor ══"
+bash "$WS/scripts/doctor.sh" "$WS"
+rc=$?
+echo "══ bootstrap: $INSTALLED instaladas, $MISSING faltaban al inicio ══"
+exit $rc

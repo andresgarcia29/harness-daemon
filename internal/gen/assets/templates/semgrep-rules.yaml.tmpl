@@ -1,0 +1,41 @@
+# semgrep/rules.yaml — sensores custom del harness. Gate en ship.sh.
+# REGLA DE ORO: cada regla incluye la REMEDIACIÓN en el mensaje — el
+# implementer arregla en una iteración, sin adivinar (economía de tokens).
+# Crece vía /promote: error repetido en review → regla aquí.
+rules:
+  - id: no-println-en-servicios
+    languages: [go]
+    severity: ERROR
+    message: >-
+      fmt.Println/Printf en código de servicio. Remediación: usa el logger
+      estructurado del servicio (ver CLAUDE.md del repo) — los prints no
+      llegan a Loki y rompen el formato de log.
+    patterns:
+      - pattern-either:
+          - pattern: fmt.Println(...)
+          - pattern: fmt.Printf(...)
+    paths:
+      exclude: ["*_test.go", "cmd/dev/*"]
+
+  - id: no-console-log
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      console.log en código de producción. Remediación: usa el logger del
+      proyecto o elimínalo antes de shippear.
+    pattern: console.log(...)
+    paths:
+      exclude: ["*.test.ts", "*.spec.ts", "**/scripts/**"]
+
+  - id: no-sleep-en-tests
+    languages: [go, python, typescript]
+    severity: WARNING
+    message: >-
+      sleep en tests = flakiness. Remediación: espera por condición
+      (polling con timeout, fake clock o canal de sincronización).
+    pattern-either:
+      - pattern: time.Sleep(...)
+      - pattern: time.sleep(...)
+      - pattern: setTimeout(...)
+    paths:
+      include: ["*_test.go", "test_*.py", "*.test.ts", "*.spec.ts"]

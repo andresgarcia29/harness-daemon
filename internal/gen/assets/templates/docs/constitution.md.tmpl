@@ -1,0 +1,52 @@
+# Constitución de {{PROJECT_NAME}}
+
+Principios innegociables. Se inyectan a TODOS los agentes (abogados,
+arquitecto, implementers, reviewer, qa, cronjobs) y son el tie-breaker
+de cualquier RFC. Cambiar este archivo = ADR ratificado por humanos.
+
+## 1. Piensa antes de implementar
+
+- **No asumas. No ocultes confusión. Expón los tradeoffs.** Si hay dos
+  interpretaciones, preséntalas — no decidas en silencio.
+- Ante incertidumbre real: PARA y pregunta (o rebota al intake). Un
+  ticket ambiguo implementado cuesta el pipeline entero.
+- Métrica: "¿un ingeniero senior diría que esto es excesivamente
+  complejo?" Si sí, simplifica antes de escribir.
+
+## 2. Código mínimo
+
+- Resuelve SOLO lo solicitado. Prohibido: features no pedidas,
+  abstracciones para código de un solo uso, "flexibilidad" especulativa,
+  manejo de errores para escenarios imposibles.
+- La solución más simple que pasa los criterios de aceptación es la
+  correcta.
+
+## 3. Cambios quirúrgicos
+
+- Cada línea modificada debe trazar directamente a la solicitud
+  (test de cumplimiento del reviewer).
+- No mejores código adyacente, no refactorices lo que funciona, respeta
+  el estilo existente aunque sea subóptimo.
+- Código muerto preexistente: MENCIÓNALO, no lo borres (eso es tarea
+  del dead-code-reaper con su propio ciclo).
+
+## 4. Ejecución verificable
+
+- Toda tarea se transforma en pasos con verificación: un bug se
+  reproduce en un test ANTES de arreglarse; una feature se ejercita
+  como usuario real antes de declararse terminada.
+- "Los tests pasan" sin evidencia (output, screenshot) no es
+  verificación, es una afirmación.
+
+## 5. Leyes del workspace (resumen; detalle en CLAUDE.md)
+
+- Push a main solo vía ship.sh. Contratos expand/contract. Ownership
+  exclusivo de datos. Worktrees siempre. Trailer `Task:`. Presupuestos
+  de loop ({{LOOP_BUDGET}}). Decisiones fuera de docs/ no existen.
+- Secretos: jamás valores en repo, chat o logs. Solo referencias.
+
+## 6. Principios propios del proyecto (RATIFICAR)
+
+{{PROJECT_PRINCIPLES}}
+<!-- ej.: "multi-tenancy: toda query filtra por tenant_id, sin
+excepciones" · "LATAM-first: fechas/moneda localizadas" -->

@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# ship.sh — ÚNICA puerta de salida a main. Los agentes piden shippear;
+# este script decide. Determinista, cero tokens en el camino verde.
+#
+# Uso: ship.sh <task-id> <repo>
+# Opera sobre el WORKTREE de la tarea (worktrees/<task>/<repo>), nunca
+# sobre el clon canónico. Gates en orden: rebase → trailer → lenguaje →
+# buf breaking → gitleaks → semgrep → veredicto de review → lock → push.
+#
+# Portabilidad: bash 3.2 (macOS), BSD grep. Sin flock (lock por mkdir).
+set -euo pipefail
+
+TASK="${1:?uso: ship.sh <task-id> <repo>}"
+REPO="${2:?uso: ship.sh <task-id> <repo>}"
+WS="$(cd "$(dirname "$0")/.." && pwd)"
+WT="$WS/worktrees/$TASK/$REPO"
+BASE="$WS/repos/$REPO"
+MAX_RETRY={{LOOP_BUDGET}}
+LOCKDIR="$WS/locks/$REPO.lock.d"
+mkdir -p "$WS/locks" "$WS/tasks/$TASK"
+
+[ -d "$WT" ] || { echo "❌ no existe el worktree $WT"; echo "   ↳ remediación: scripts/worktree-task.sh $TASK $REPO"; exit 2; }
+[ -d "$BASE/.git" ] || { echo "❌ no existe el clon base $BASE"; exit 2; }
+
+# El bus: lo que este gate decide se cuenta. Fail-open — si emit.sh no está,
+# ship.sh funciona igual (el bus es observación, no control).
+# shellcheck source=/dev/null
+[ -f "$WS/scripts/emit.sh" ] && . "$WS/scripts/emit.sh" || emit() { :; }
+
+# Instrumentación en UN solo punto: si estamos empezando un gate, el anterior
+# pasó. El trap sabe cuál falló. Cero riesgo de olvidarse de instrumentar uno.
+gate() {
+  [ -n "${CURRENT_GATE:-}" ] && [ "$CURRENT_GATE" != "preflight" ] \
+    && emit gate "$CURRENT_GATE" true
+  echo "── gate: $1 ──"; CURRENT_GATE="$1"
+}
+
+# El error de un gate es un PROMPT: al fallar cualquier gate, el trap
+# imprime la instrucción de autocorrección (el agente que lee esto
+# arregla en una iteración, sin adivinar). También libera el lock.
+CURRENT_GATE="preflight"; LOCK_HELD=""
+on_exit() {
+  local rc=$?
+  [ -n "$LOCK_HELD" ] && rm -rf "$LOCKDIR"
+  if [ "$rc" -eq 0 ]; then
+    [ -n "${CURRENT_GATE:-}" ] && emit gate "$CURRENT_GATE" true
+    return 0
+  fi
+  # UN GATE QUE BLOQUEA ES LA MEJOR NOTICIA DEL SISTEMA: es la prueba de que el
+  # harness frena a su propio agente. Se cuenta igual de fuerte que un éxito.
+  emit gate "$CURRENT_GATE — BLOQUEÓ el ship de $REPO (exit $rc)" false
+  echo ""
+  echo "⛔ gate '$CURRENT_GATE' falló (exit $rc)."
+  echo "   → Lee el error de arriba. Corrige SOLO eso en el worktree $WT,"
+  echo "     commitea con el trailer 'Task: $TASK' y re-corre ship.sh."
+  echo "   → Presupuesto de autofix: 2 rondas. Si esta es la tercera, PARA"
+  echo "     y escala a humano con el error completo (Ley 6)."
+}
+trap on_exit EXIT
+
+# ── Lock por repo: merge queue de pobre, portable (sin flock) ─────────
+# Dos ventanas de muerte que hay que cerrar (las dos costaron un lock inmortal):
+#   1. mkdir OK → SIGKILL → pid nunca escrito. El reclamo de huérfanos exigía
+#      [ -f pid ], así que un lock sin pid no era reclamable por NADIE: todo
+#      ship futuro de ese repo esperaba 10 min y moría, para siempre, hasta que
+#      un humano hiciera rm -rf. Reproducido antes de arreglarlo.
+#   2. mkdir OK → fallo → el trap corría con LOCK_HELD vacío y no limpiaba.
+#      LOCK_HELD se marca AHORA justo después del mkdir, no después del pid.
+acquire_lock() {
+  local waited=0 nopid=0
+  until mkdir "$LOCKDIR" 2>/dev/null; do
+    if [ -f "$LOCKDIR/pid" ]; then
+      # lock huérfano: el proceso dueño ya no existe
+      if ! kill -0 "$(cat "$LOCKDIR/pid" 2>/dev/null)" 2>/dev/null; then
+        echo "⚠️  lock huérfano de pid $(cat "$LOCKDIR/pid" 2>/dev/null); lo reclamo"
+        rm -rf "$LOCKDIR"; nopid=0; continue
+      fi
+      nopid=0
+    else
+      # Sin pid: o el dueño está EN la ventana de adquisición (microsegundos),
+      # o murió dentro de ella y el lock quedó inmortal. Damos gracia; si a los
+      # 15s sigue sin pid, no hay dueño vivo que lo vaya a escribir.
+      nopid=$((nopid+1))
+      if [ "$nopid" -ge 15 ]; then
+        echo "⚠️  lock sin pid tras 15s — huérfano de una muerte en la ventana de adquisición; lo reclamo"
+        rm -rf "$LOCKDIR"; nopid=0; continue
+      fi
+      sleep 1; continue
+    fi
+    waited=$((waited+3))
+    [ "$waited" -ge 600 ] && { echo "❌ lock de $REPO ocupado >10min ($LOCKDIR) — otro ship en curso"; exit 6; }
+    sleep 3
+  done
+  LOCK_HELD=1                 # ANTES del pid: si morimos ahora, el trap limpia
+  echo $$ > "$LOCKDIR/pid"
+}
+
+# ── Gates ─────────────────────────────────────────────────────────────
+gate_trailer() {
+  gate "trailer Task: $TASK"
+  local total with_trailer
+  total=$(git rev-list --count origin/main..HEAD)
+  [ "$total" -gt 0 ] || { echo "❌ no hay commits nuevos sobre origin/main"; exit 3; }
+  with_trailer=$(git log origin/main..HEAD --format=%B | grep -cE "^Task: $TASK\$" || true)
+  [ "$with_trailer" -ge "$total" ] || {
+    echo "❌ $((total-with_trailer)) de $total commits sin trailer 'Task: $TASK'"
+    echo "   ↳ remediación: git rebase origin/main --exec 'git commit --amend --no-edit --trailer \"Task: $TASK\"'"
+    exit 3
+  }
+}
+
+run_lang_gates() {
+  if [ -f go.mod ]; then
+    gate go; go vet ./... && go build ./... && go test ./...
+  fi
+  if [ -f package.json ]; then
+    gate ts
+    if [ -f tsconfig.json ]; then npx tsc --noEmit; fi   # gate DURO: sin || true
+    npm test --if-present
+  fi
+  if [ -f pyproject.toml ]; then
+    gate python
+    ruff check .
+    if command -v uv >/dev/null; then uv run pytest -q; else pytest -q; fi
+  fi
+  if [ -f pubspec.yaml ]; then
+    gate flutter; flutter analyze && flutter test
+  fi
+  if [ -f buf.yaml ]; then
+    gate buf
+    # breaking: SIEMPRE duro (--against apunta al gitdir del clon base)
+    buf breaking --against "$BASE/.git#branch=origin/main"
+    # lint: RATCHET — solo violaciones NUEVAS respecto a main bloquean.
+    # La deuda preexistente no secuestra shipping ajeno (la baja el
+    # ratchet-keeper con su propio ciclo). Se ignoran números de línea
+    # para tolerar corrimientos.
+    norm() { jq -c 'del(.start_line,.end_line,.start_column,.end_column)' 2>/dev/null | sort; }
+    head_lint="$(buf lint --error-format=json 2>/dev/null | norm || true)"
+    main_lint="$(cd "$BASE" && buf lint --error-format=json 2>/dev/null | norm || true)"
+    new_lint="$(comm -13 <(printf '%s' "$main_lint") <(printf '%s' "$head_lint"))"
+    if [ -n "$new_lint" ]; then
+      echo "❌ buf lint: violaciones NUEVAS introducidas por este cambio:"
+      echo "$new_lint" | jq -r '"   \(.path): \(.message)"' 2>/dev/null || echo "$new_lint"
+      echo "   ↳ remediación: corrige SOLO estas (la deuda preexistente de main no bloquea)"
+      exit 3
+    fi
+    [ -n "$main_lint" ] && echo "⚠️  buf lint: $(printf '%s\n' "$main_lint" | grep -c .) violaciones PREEXISTENTES en main (no bloquean; candidatas al ratchet-keeper)"
+  fi
+}
+
+run_security_gates() {
+  gate gitleaks
+  # detect sobre el rango real a pushear (protect --staged es no-op aquí)
+  gitleaks detect --no-banner --log-opts="origin/main..HEAD"
+  if [ -f "$WS/semgrep/rules.yaml" ]; then
+    gate semgrep
+    semgrep scan --config "$WS/semgrep/rules.yaml" --error --quiet .
+  fi
+}
+
+# gate_tests_untouched — el gate confía en el test suite; el test suite es un
+# archivo que el agente puede editar. Sin este gate, la forma MÁS BARATA de
+# pasar a verde no es arreglar el código: es debilitar el test. Está medido —
+# en SWE-bench+, el 31% de los parches "exitosos" pasaban por tests débiles, y
+# los harnesses que solo piden "no borres tests" en prosa lo piden porque no
+# tienen gate. Aquí los tests son el CONTRATO: cambiar uno exige delta-spec.
+#
+# La cuarentena de flake-warden NO es una puerta trasera de este gate: los
+# cronjobs jamás llaman a ship.sh — abren un PR que un humano revisa. Esa es la
+# excepción privilegiada, y es explícita. Si algún día alguien enruta un cronjob
+# por aquí, este gate lo bloqueará, y hará bien: un skip que nadie miró es
+# exactamente lo que este gate existe para impedir.
+gate_tests_untouched() {
+  gate "tests no debilitados"
+  local pat="${TEST_PATH_PATTERN:-(test|spec|Test|_test\.|\.test\.|\.spec\.|/tests?/|/spec/)}"
+  local touched
+  touched="$(git diff origin/main..HEAD --name-only | grep -E "$pat" || true)"
+  [ -n "$touched" ] || return 0
+
+  # Señales de debilitamiento: borrar el archivo, o quitar/saltar aserciones.
+  local deleted weakened
+  deleted="$(git diff origin/main..HEAD --diff-filter=D --name-only | grep -E "$pat" || true)"
+  weakened="$(git diff origin/main..HEAD -- $(printf '%s ' $touched) 2>/dev/null \
+    | grep -E '^-' | grep -vE '^---' \
+    | grep -cE '(assert|expect|require\.|should|t\.Error|@Test|it\(|test\(|describe\()' || true)"
+  local skipped
+  skipped="$(git diff origin/main..HEAD -- $(printf '%s ' $touched) 2>/dev/null \
+    | grep -E '^\+' | grep -cE '(@skip|\.skip\(|xit\(|xdescribe\(|t\.Skip\(|pytest\.mark\.skip|#\[ignore\])' || true)"
+
+  if [ -n "$deleted" ] || [ "${weakened:-0}" -gt 0 ] || [ "${skipped:-0}" -gt 0 ]; then
+    # La excepción legítima existe: si el RFC declaró el cambio de comportamiento
+    # en el delta-spec, tocar el test NO es hacer trampa — es cumplir la spec.
+    local delta="$WS/tasks/$TASK/delta-spec.md"
+    if [ -f "$delta" ] && grep -qiE '(REMOVED|MODIFIED)' "$delta"; then
+      echo "⚠️  tests tocados, pero el delta-spec declara REMOVED/MODIFIED — permitido (queda en el registro)"
+      return 0
+    fi
+    echo "❌ este cambio DEBILITA tests y ningún delta-spec lo declara:"
+    [ -n "$deleted" ] && echo "   · borrados: $deleted"
+    [ "${weakened:-0}" -gt 0 ] && echo "   · $weakened aserciones eliminadas"
+    [ "${skipped:-0}" -gt 0 ] && echo "   · $skipped skips/ignores añadidos"
+    echo "   ↳ remediación: los tests son el CONTRATO, no el obstáculo. Si el"
+    echo "     comportamiento DEBE cambiar, eso es un RFC: declara el cambio en"
+    echo "     tasks/$TASK/delta-spec.md como MODIFIED/REMOVED y re-corre. Si no,"
+    echo "     arregla el CÓDIGO hasta que el test pase como está."
+    exit 3
+  fi
+}
+
+# gate_evidence — nuestra ley es "los agentes proponen, los sistemas
+# deterministas verifican". La compliance matrix la ESCRIBE un agente: hasta
+# ahora, el verificador proponía. Este gate no juzga el código; solo comprueba
+# mecánicamente que el artefacto citado por cada requirement (a) existe y (b)
+# fue REALMENTE leído (lo registra el hook track-read.sh). Es una intersección
+# de conjuntos: cero LLM, cero opinión.
+gate_evidence() {
+  local v="$WS/tasks/$TASK/verdict-$REPO.json"
+  jq -e 'has("compliance")' "$v" >/dev/null 2>&1 || return 0
+  gate "evidencia de compliance"
+  local log="$WS/tasks/$TASK/evidence.log"
+  local missing=0 unread=0 row art
+  while IFS= read -r art; do
+    [ -n "$art" ] || continue
+    if [ ! -e "$WS/$art" ] && [ ! -e "$WT/$art" ]; then
+      echo "   ✗ citado pero NO EXISTE: $art"; missing=$((missing+1)); continue
+    fi
+    if [ -f "$log" ] && grep -qF -- "$art" "$log"; then :; else
+      echo "   ✗ citado pero NADIE LO LEYÓ: $art"; unread=$((unread+1))
+    fi
+  done <<EOF
+$(jq -r '.compliance[]? | select(.covered==true) | .evidence // .test // empty' "$v" 2>/dev/null)
+EOF
+  if [ "$missing" -gt 0 ] || [ "$unread" -gt 0 ]; then
+    echo "❌ la compliance matrix cita evidencia que no existe ($missing) o que nunca se leyó ($unread)"
+    echo "   ↳ remediación: un requirement solo pasa a covered:true si el reviewer"
+    echo "     ABRIÓ el artefacto que lo prueba (test, log, screenshot). Corre el"
+    echo "     test, lee su salida, y cita la ruta real en .compliance[].evidence."
+    echo "     'Confía en mí' no es evidencia — por eso existe este gate."
+    exit 3
+  fi
+}
+
+check_verdict() {
+  gate "veredicto de review"
+  local v="$WS/tasks/$TASK/verdict-$REPO.json"
+  [ -f "$v" ] || { echo "❌ sin veredicto en $v"; echo "   ↳ remediación: corre /review $TASK $REPO primero"; exit 3; }
+  jq -e '.verdict=="pass" and .qa=="pass"' "$v" >/dev/null \
+    || { echo "❌ veredicto no es pass — corrige los items blocking listados en $v (cada uno trae su remediación) y re-corre /review"; exit 3; }
+  # compliance: todo requirement del delta-spec cubierto por tests
+  jq -e '(.requirements_uncovered // 0) == 0' "$v" >/dev/null \
+    || { echo "❌ $(jq -r '.requirements_uncovered' "$v") requirements del delta-spec sin test que los proteja"
+         echo "   ↳ remediación: escribe el test faltante (ver .compliance[] con covered:false en $v) o pide al humano una excepción explícita"; exit 3; }
+}
+
+# ── Loop de ship ──────────────────────────────────────────────────────
+acquire_lock
+cd "$WT"
+attempt=0
+while [ "$attempt" -lt "$MAX_RETRY" ]; do
+  attempt=$((attempt+1))
+  echo "══ ship $REPO (task $TASK) intento $attempt/$MAX_RETRY ══"
+  git fetch origin
+  git rebase origin/main || { git rebase --abort; echo "❌ conflicto de rebase — resuélvelo en el worktree $WT"; exit 4; }
+  gate_trailer
+  gate_tests_untouched
+  run_lang_gates
+  run_security_gates
+  check_verdict
+  gate_evidence
+  if git push origin HEAD:main; then
+    sha="$(git rev-parse --short HEAD)"
+    echo "{\"repo\":\"$REPO\",\"sha\":\"$sha\",\"shipped_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >> "$WS/tasks/$TASK/ship.log"
+    # Cierra el último gate ANTES de anunciar el ship: si lo dejara al trap,
+    # el "veredicto ✅" saldría en el bus DESPUÉS del "shippeé" y la historia
+    # tendría el penúltimo paso después del último.
+    [ -n "${CURRENT_GATE:-}" ] && emit gate "$CURRENT_GATE" true && CURRENT_GATE=""
+    emit ship "$REPO @ $sha — pasó los gates y está en main" true
+    echo "✅ shipped $REPO @ $sha"
+    echo "→ siguiente: scripts/deploy-watch.sh $TASK $REPO (o /ship se encarga)"
+    exit 0
+  fi
+  echo "⚠️ push rechazado (non-fast-forward), reintentando tras rebase…"
+done
+echo "❌ agotados $MAX_RETRY intentos — escala a humano"
+exit 5

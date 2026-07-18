@@ -1,0 +1,969 @@
+{
+  "capabilities": [
+    {
+      "bin": "jq",
+      "category": "core",
+      "detect": "always",
+      "install": "brew install jq | apt-get install -y jq",
+      "name": "jq",
+      "permission_tier": "read-only",
+      "profiles": [
+        "all"
+      ],
+      "provider": "cli",
+      "purpose": "Parseo JSON en scripts del harness (obligatorio: hooks y doctor dependen de él)"
+    },
+    {
+      "bin": "gh",
+      "category": "core",
+      "detect": "repos con .github/workflows",
+      "install": "brew install gh | https://cli.github.com",
+      "name": "gh",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador",
+        "deployer",
+        "jardinero"
+      ],
+      "provider": "cli",
+      "purpose": "GitHub CLI: estado y logs de Actions (debug de CI), PRs, releases",
+      "secrets": [
+        {
+          "key": "GH_TOKEN",
+          "source": "env://GH_TOKEN"
+        }
+      ]
+    },
+    {
+      "bin": "go",
+      "category": "build",
+      "detect": "repos con go.mod",
+      "install": "brew install go golangci-lint",
+      "name": "go-toolchain",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer",
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "go build/test/vet + golangci-lint para servicios Go"
+    },
+    {
+      "bin": "npm",
+      "category": "build",
+      "detect": "repos con package.json",
+      "install": "brew install node (o bun)",
+      "name": "node-toolchain",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer",
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "bun/npm + tsc --noEmit para frontends TS"
+    },
+    {
+      "bin": "uv",
+      "category": "build",
+      "detect": "repos con pyproject.toml",
+      "install": "brew install uv",
+      "name": "python-toolchain",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer",
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "uv + ruff + pytest para servicios Python"
+    },
+    {
+      "bin": "flutter",
+      "category": "build",
+      "detect": "repos con pubspec.yaml",
+      "install": "https://docs.flutter.dev/get-started",
+      "name": "flutter-toolchain",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer",
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "flutter analyze/test para mobile"
+    },
+    {
+      "bin": "buf",
+      "category": "contracts",
+      "detect": "repos con buf.yaml",
+      "install": "brew install bufbuild/buf/buf",
+      "name": "buf",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "arquitecto",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Lint + breaking-change detection de protobuf. GATE DURO en ship.sh"
+    },
+    {
+      "bin": "kubectl",
+      "category": "infra",
+      "detect": "repos con charts de Helm o manifests k8s",
+      "install": "gcloud components install kubectl",
+      "name": "kubectl",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "cli",
+      "purpose": "Estado del cluster; diagnóstico en rojo. Write vía GitOps, nunca kubectl apply",
+      "secrets": [
+        {
+          "key": "KUBECONFIG",
+          "source": "vault://<project>/harness/kubeconfig"
+        }
+      ]
+    },
+    {
+      "bin": "gcloud",
+      "category": "infra",
+      "detect": "terraform con provider google",
+      "install": "https://cloud.google.com/sdk/docs/install",
+      "name": "gcloud",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "cli",
+      "purpose": "GCP: logs, estado de recursos. Soporta keyless (token efímero vía Vault)",
+      "secrets": [
+        {
+          "key": "CLOUDSDK_AUTH_ACCESS_TOKEN",
+          "source": "vault://gcp/impersonated-account"
+        }
+      ]
+    },
+    {
+      "bin": "argocd",
+      "category": "infra",
+      "detect": "manifests de ArgoCD",
+      "install": "brew install argocd",
+      "name": "argocd",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "Health y sync de apps post-promoción (lo usa deploy-watch.sh)",
+      "secrets": [
+        {
+          "key": "ARGOCD_AUTH_TOKEN",
+          "source": "vault://<project>/harness/argocd"
+        }
+      ]
+    },
+    {
+      "bin": "kargo",
+      "category": "infra",
+      "detect": "manifests de Kargo",
+      "install": "brew install akuity/tap/kargo-cli",
+      "name": "kargo",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "Verificar promociones de freight en el pipeline CD",
+      "secrets": [
+        {
+          "key": "KARGO_TOKEN",
+          "source": "vault://<project>/harness/kargo"
+        }
+      ]
+    },
+    {
+      "bin": "terraform",
+      "category": "infra",
+      "detect": "repos con *.tf",
+      "install": "brew install terraform",
+      "name": "terraform",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "svc"
+      ],
+      "provider": "cli",
+      "purpose": "plan/validate en repos de infra (apply SIEMPRE humano o CI)"
+    },
+    {
+      "bin": "vault",
+      "category": "infra",
+      "detect": "elegido en entrevista (secrets.source: vault)",
+      "install": "brew install hashicorp/tap/vault",
+      "name": "vault",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador",
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "HashiCorp Vault CLI: fuente única de secretos; secrets.sh lo materializa a .secrets",
+      "secrets": [
+        {
+          "key": "VAULT_TOKEN",
+          "source": "file://~/.config/harness/vault-token (chmod 600, fuera del repo)"
+        }
+      ]
+    },
+    {
+      "bin": "gitleaks",
+      "category": "quality",
+      "detect": "always-recommend",
+      "install": "brew install gitleaks",
+      "name": "gitleaks",
+      "permission_tier": "read-only",
+      "profiles": [
+        "all"
+      ],
+      "provider": "cli",
+      "purpose": "Scan de secretos sobre el rango a pushear. OBLIGATORIO en direct-to-prod"
+    },
+    {
+      "bin": "semgrep",
+      "category": "quality",
+      "detect": "always-recommend",
+      "install": "brew install semgrep | pip install semgrep",
+      "name": "semgrep",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "qa",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Reglas custom multi-lenguaje CON mensaje de remediación (menos iteraciones de loop). Gate en ship.sh"
+    },
+    {
+      "bin": "depcruise",
+      "category": "quality",
+      "detect": "repos con package.json",
+      "install": "npm i -g dependency-cruiser",
+      "name": "dependency-cruiser",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Fronteras de módulos/capas en TS como GATE (la dirección de dependencias es ley)"
+    },
+    {
+      "bin": "lint-imports",
+      "category": "quality",
+      "detect": "repos con pyproject.toml",
+      "install": "pip install import-linter",
+      "name": "import-linter",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Fronteras de capas en Python como GATE"
+    },
+    {
+      "bin": "go-arch-lint",
+      "category": "quality",
+      "detect": "repos con go.mod",
+      "install": "go install github.com/fe3dback/go-arch-lint@latest",
+      "name": "go-arch-lint",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Fronteras de capas en Go como GATE (.go-arch-lint.yml declara el grafo permitido)"
+    },
+    {
+      "bin": "sg",
+      "category": "quality",
+      "detect": "always-recommend",
+      "install": "brew install ast-grep",
+      "name": "ast-grep",
+      "note": "sin soporte Dart built-in; semgrep/opengrep cubre lo multi-lenguaje",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "implementer",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Reglas AST YAML con autofix, mucho más rápido que semgrep; el rule-miner escribe reglas aquí"
+    },
+    {
+      "category": "token-economy",
+      "detect": "always-recommend",
+      "install": "generado por el harness en scripts/",
+      "name": "quiet-wrapper",
+      "permission_tier": "read-only",
+      "profiles": [
+        "all"
+      ],
+      "provider": "script",
+      "purpose": "scripts/quiet.sh: outputs ruidosos (kubectl logs, gh run view) → head+tail + dump completo en .cache/quiet/"
+    },
+    {
+      "bin": "graphify",
+      "category": "token-economy",
+      "detect": "workspace con 5+ repos",
+      "install": "uv tool install graphifyy",
+      "name": "graphify",
+      "permission_tier": "read-only",
+      "profiles": [
+        "arquitecto",
+        "jardinero",
+        "orquestador"
+      ],
+      "provider": "cli",
+      "purpose": "Knowledge graph cross-repo (Tree-sitter+Leiden): preguntas de comprensión al grafo, no grep masivo (~71× menos tokens)"
+    },
+    {
+      "bin": "semble",
+      "category": "token-economy",
+      "detect": "always-recommend",
+      "install": "uv tool install semble",
+      "name": "semble",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "orquestador",
+        "implementer"
+      ],
+      "provider": "cli",
+      "purpose": "Búsqueda semántica local (CPU-only, sin API keys): '¿dónde está X?' sin abrir 20 archivos"
+    },
+    {
+      "bin": "ccusage",
+      "category": "token-economy",
+      "detect": "always-recommend",
+      "install": "npm i -g ccusage",
+      "name": "ccusage",
+      "permission_tier": "read-only",
+      "profiles": [
+        "orquestador"
+      ],
+      "provider": "cli",
+      "purpose": "Costo por tarea/fase — la báscula del harness. Correr ANTES de optimizar nada"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "--from",
+          "git+https://github.com/oraios/serena",
+          "serena",
+          "start-mcp-server",
+          "--context",
+          "ide-assistant",
+          "--enable-web-dashboard",
+          "false"
+        ],
+        "command": "uvx"
+      },
+      "detect": "always-recommend",
+      "mcp": "serena",
+      "name": "serena",
+      "note": "multi-repo: Serena es POR-PROYECTO — el implementer DEBE activate_project sobre su worktree al arrancar (el template ya lo instruye); sin eso las tools simbólicas no operan. Dashboard deshabilitado (se abría en cada sesión). Desactivar sus tools básicos de archivo (Claude Code ya los trae)",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer"
+      ],
+      "provider": "mcp",
+      "purpose": "Retrieval y edición SIMBÓLICA vía LSP — el ahorro de tokens más grande en implementación"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "-y",
+          "@upstash/context7-mcp"
+        ],
+        "command": "npx"
+      },
+      "detect": "always-recommend",
+      "mcp": "context7",
+      "name": "context7",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "arquitecto"
+      ],
+      "provider": "mcp",
+      "purpose": "Docs de librerías bajo demanda — no web-search repetido de la misma API"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "@playwright/mcp@latest"
+        ],
+        "command": "npx"
+      },
+      "detect": "repos frontend",
+      "mcp": "playwright",
+      "name": "playwright",
+      "permission_tier": "read-write",
+      "profiles": [
+        "qa"
+      ],
+      "provider": "mcp",
+      "purpose": "QA de frontends y smoke del canary tenant"
+    },
+    {
+      "bin": "engram",
+      "category": "mcp",
+      "config": {
+        "args": [
+          "mcp",
+          "--project",
+          "{{PROJECT_SLUG}}"
+        ],
+        "command": "engram"
+      },
+      "detect": "always-recommend",
+      "install": "brew install gentleman-programming/tap/engram",
+      "mcp": "engram",
+      "name": "engram",
+      "note": "fijar --project explícito; no derivar del remote",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador",
+        "arquitecto"
+      ],
+      "provider": "mcp",
+      "purpose": "Memoria episódica del harness (mem_search al iniciar, mem_save al cerrar)"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "-e",
+          "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "ghcr.io/github/github-mcp-server"
+        ],
+        "command": "docker",
+        "wrap": true
+      },
+      "detect": "repos con .github/workflows",
+      "mcp": "github",
+      "name": "github-mcp",
+      "permission_tier": "read-write",
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "Runs/logs de Actions estructurados (debug de CI en rojo). Redundante si gh CLI basta",
+      "secrets": [
+        {
+          "key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "source": "vault://<project>/harness/github"
+        }
+      ]
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "kubernetes-mcp-server@latest"
+        ],
+        "command": "npx",
+        "wrap": true
+      },
+      "detect": "cluster k8s (helm/argocd en inventory)",
+      "mcp": "kubernetes",
+      "name": "kubernetes-mcp",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "Pods/logs/exec estructurados en el cluster (diagnóstico en rojo)",
+      "secrets": [
+        {
+          "key": "KUBECONFIG",
+          "source": "vault://<project>/harness/kubeconfig"
+        }
+      ]
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "argocd-mcp@latest",
+          "stdio"
+        ],
+        "command": "npx",
+        "wrap": true
+      },
+      "detect": "manifests de ArgoCD",
+      "mcp": "argocd",
+      "name": "argocd-mcp",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "mcp",
+      "purpose": "Estado/sync de deploys estructurado. Redundante si argocd CLI + deploy-watch bastan",
+      "secrets": [
+        {
+          "key": "ARGOCD_AUTH_TOKEN",
+          "source": "vault://<project>/harness/argocd"
+        }
+      ]
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "mcp-grafana"
+        ],
+        "command": "uvx",
+        "wrap": true
+      },
+      "detect": "elegido en entrevista (observabilidad)",
+      "mcp": "grafana",
+      "name": "grafana-mcp",
+      "permission_tier": "read-only",
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "Dashboards + Prometheus + Loki para diagnóstico post-deploy",
+      "secrets": [
+        {
+          "key": "GRAFANA_TOKEN",
+          "source": "vault://<project>/harness/grafana"
+        }
+      ]
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "-e",
+          "VAULT_ADDR",
+          "-e",
+          "VAULT_TOKEN",
+          "hashicorp/vault-mcp-server"
+        ],
+        "command": "docker",
+        "wrap": true
+      },
+      "detect": "elegido en entrevista (secrets.source: vault)",
+      "mcp": "vault",
+      "name": "vault-mcp",
+      "note": "exigir policy de Vault que deniegue platform/infra; los valores JAMÁS pasan por el chat",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "Lectura de secretos + escritura SOLO del app-plane (policy dedicada; platform/infra denegados)"
+    },
+    {
+      "category": "tracking",
+      "detect": "tickets.provider: linear",
+      "install": "generado por el harness en scripts/",
+      "name": "linear-bridge",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador"
+      ],
+      "provider": "script",
+      "purpose": "ticket-pull.sh / ticket-close.sh (API GraphQL vía curl, cero tokens en el loop)",
+      "secrets": [
+        {
+          "key": "LINEAR_API_KEY",
+          "source": "vault://<project>/harness/linear"
+        }
+      ]
+    },
+    {
+      "category": "tracking",
+      "config": {
+        "args": [
+          "-y",
+          "mcp-remote",
+          "https://mcp.linear.app/sse"
+        ],
+        "command": "npx"
+      },
+      "detect": "tickets.provider: linear",
+      "mcp": "linear",
+      "name": "linear-mcp",
+      "permission_tier": "read-write",
+      "phase": 2,
+      "profiles": [
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "MCP oficial de Linear — intake conversacional y menos fricción de red que curl. Los scripts siguen para el loop (cero tokens); este es para explorar/triage"
+    },
+    {
+      "bin": "bd",
+      "category": "tracking",
+      "detect": "always-recommend",
+      "install": "brew install beads",
+      "name": "beads",
+      "permission_tier": "read-write",
+      "profiles": [
+        "orquestador",
+        "arquitecto",
+        "implementer"
+      ],
+      "provider": "cli",
+      "purpose": "DAG de tareas git-backed para agentes (bd ready --json). Beads=estado del trabajo; Engram=conocimiento. v1.1+ trae bd linear sync nativo"
+    },
+    {
+      "bin": "gotestsum",
+      "category": "testing",
+      "detect": "repos con go.mod",
+      "install": "go install gotest.tools/gotestsum@latest",
+      "name": "gotestsum",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "Runner Go con JUnit XML (insumo del flake-warden) y --rerun-fails acotado"
+    },
+    {
+      "bin": "diff-cover",
+      "category": "testing",
+      "cronjob": "ratchet-keeper",
+      "detect": "always-recommend",
+      "install": "pip install diff-cover",
+      "name": "diff-cover",
+      "permission_tier": "read-only",
+      "profiles": [
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Cobertura DEL DIFF (no global) como ratchet — funciona con lcov/cobertura de los 4 lenguajes"
+    },
+    {
+      "bin": "npx",
+      "category": "testing",
+      "cronjob": "mutation-sentinel",
+      "detect": "repos con package.json",
+      "install": "npm i -D @stryker-mutator/core (por repo TS)",
+      "name": "stryker",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Mutation testing TS incremental (los tests de IA que no protegen, desenmascarados)"
+    },
+    {
+      "bin": "mutmut",
+      "category": "testing",
+      "cronjob": "mutation-sentinel",
+      "detect": "repos con pyproject.toml",
+      "install": "pip install mutmut",
+      "name": "mutmut",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Mutation testing Python incremental (requiere pytest, corre en el CronJob Linux)"
+    },
+    {
+      "bin": "go-mutesting",
+      "category": "testing",
+      "cronjob": "mutation-sentinel",
+      "detect": "repos con go.mod",
+      "install": "go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest",
+      "name": "go-mutesting",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Mutation testing Go (scope SIEMPRE a paquetes cambiados; sin caché incremental)"
+    },
+    {
+      "bin": "k6",
+      "category": "testing",
+      "detect": "servicios gRPC/HTTP",
+      "install": "brew install k6",
+      "name": "k6",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "qa"
+      ],
+      "provider": "cli",
+      "purpose": "Load testing con thresholds (p95, error rate) que fallan el build; habla gRPC nativo"
+    },
+    {
+      "bin": "knip",
+      "category": "hygiene",
+      "cronjob": "dead-code-reaper",
+      "detect": "repos con package.json",
+      "install": "npm i -g knip",
+      "name": "knip",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Código muerto en TS (exports/deps/archivos sin uso), reporter JSON"
+    },
+    {
+      "bin": "vulture",
+      "category": "hygiene",
+      "cronjob": "dead-code-reaper",
+      "detect": "repos con pyproject.toml",
+      "install": "pip install vulture",
+      "name": "vulture",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Código muerto en Python (usar --min-confidence 90 + whitelist committeada)"
+    },
+    {
+      "bin": "deadcode",
+      "category": "hygiene",
+      "cronjob": "dead-code-reaper",
+      "detect": "repos con go.mod",
+      "install": "go install golang.org/x/tools/cmd/deadcode@latest",
+      "name": "deadcode",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Código muerto en Go (oficial x/tools, -json -whylive)"
+    },
+    {
+      "bin": "jscpd",
+      "category": "hygiene",
+      "cronjob": "dead-code-reaper",
+      "detect": "always-recommend",
+      "install": "npm i -g jscpd",
+      "name": "jscpd",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Duplicación multi-lenguaje (cubre Go/Py/TS/Dart en una pasada; reporter AI token-eficiente)"
+    },
+    {
+      "bin": "renovate",
+      "category": "security",
+      "cronjob": "dep-shepherd",
+      "detect": "always-recommend",
+      "install": "npm i -g renovate (o CronJob oficial self-hosted)",
+      "name": "renovate",
+      "permission_tier": "read-write",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Updates de deps con minimumReleaseAge:14d (defensa supply-chain) + automerge con CI verde. Cubre pub/Flutter",
+      "secrets": [
+        {
+          "key": "RENOVATE_TOKEN",
+          "source": "vault://<project>/harness/github"
+        }
+      ]
+    },
+    {
+      "bin": "osv-scanner",
+      "category": "security",
+      "cronjob": "vuln-watch",
+      "detect": "always-recommend",
+      "install": "brew install osv-scanner",
+      "name": "osv-scanner",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Vulns de deps en los 4 ecosistemas (incluye Dart), SARIF"
+    },
+    {
+      "bin": "trivy",
+      "category": "security",
+      "cronjob": "vuln-watch",
+      "detect": "always-recommend",
+      "install": "brew install trivy",
+      "name": "trivy",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Vulns + secretos + IaC en una pasada (complementa gitleaks en cron)"
+    },
+    {
+      "bin": "cosign",
+      "category": "security",
+      "detect": "repos con Dockerfile + CD",
+      "install": "brew install cosign",
+      "name": "cosign",
+      "permission_tier": "read-write",
+      "phase": 2,
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "Firma keyless de imágenes + verificación en deploy: ningún agente despliega una imagen que no salió del pipeline"
+    },
+    {
+      "bin": "squawk",
+      "category": "deploy",
+      "detect": "repos con migraciones SQL",
+      "install": "npm i -g squawk-cli",
+      "name": "squawk",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "reviewer"
+      ],
+      "provider": "cli",
+      "purpose": "Lint de migraciones Postgres: detecta ALTERs bloqueantes e índices sin CONCURRENTLY. GATE en direct-to-prod"
+    },
+    {
+      "bin": "goose",
+      "category": "deploy",
+      "detect": "repos con migraciones SQL",
+      "install": "brew install goose",
+      "name": "goose",
+      "permission_tier": "read-write",
+      "profiles": [
+        "implementer"
+      ],
+      "provider": "cli",
+      "purpose": "Migraciones versionadas embebibles en el binario Go o como promotion step de Kargo. Disciplina expand/contract"
+    },
+    {
+      "bin": "buf",
+      "category": "contracts",
+      "detect": "repos con buf.yaml",
+      "install": "buf.build/bufbuild/protovalidate (dep en el repo proto)",
+      "name": "protovalidate",
+      "permission_tier": "read-only",
+      "profiles": [
+        "implementer",
+        "arquitecto"
+      ],
+      "provider": "cli",
+      "purpose": "Validación COMO PARTE del contrato proto (una fuente de reglas, interceptores Go/Py/TS). Dart: valida el servidor"
+    },
+    {
+      "bin": "sloth",
+      "category": "deploy",
+      "detect": "prometheus en el stack",
+      "install": "brew install slok/tap/sloth",
+      "name": "sloth",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "SLOs → recording rules multi-burn-rate; los AnalysisTemplates y el slo-watchdog leen burn rate, no error rate crudo"
+    },
+    {
+      "category": "deploy",
+      "detect": "elegido en entrevista (direct-to-prod)",
+      "install": "self-hosted (helm chart) — no es CLI local",
+      "name": "unleash",
+      "permission_tier": "read-write",
+      "phase": 2,
+      "profiles": [
+        "implementer",
+        "deployer"
+      ],
+      "provider": "cli",
+      "purpose": "Feature flags OSS (OpenFeature-compatible, SDK Flutter oficial): deploy≠release en direct-to-prod; webhook de flags stale → PR de limpieza"
+    },
+    {
+      "bin": "lychee",
+      "category": "docs",
+      "cronjob": "doc-gardener",
+      "detect": "always-recommend",
+      "install": "brew install lychee",
+      "name": "lychee",
+      "permission_tier": "read-only",
+      "profiles": [],
+      "provider": "cli",
+      "purpose": "Links rotos en docs/ y CLAUDE.md (detector del doc-gardener)"
+    },
+    {
+      "bin": "d2",
+      "category": "docs",
+      "cronjob": "doc-gardener",
+      "detect": "always-recommend",
+      "install": "brew install d2",
+      "name": "d2",
+      "permission_tier": "read-only",
+      "profiles": [
+        "jardinero",
+        "arquitecto"
+      ],
+      "provider": "cli",
+      "purpose": "Diagramas regenerables desde texto (binario estático, determinista, sketch mode). Un diagrama que no se regenera está muerto"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [
+          "-y",
+          "@sentry/mcp-server"
+        ],
+        "command": "npx",
+        "wrap": true
+      },
+      "detect": "sentry sdk en repos",
+      "mcp": "sentry",
+      "name": "sentry-mcp",
+      "note": "no dejar que el agente actúe automáticamente sobre stack traces (prompt injection vía contenido de errores)",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "deployer",
+        "orquestador"
+      ],
+      "provider": "mcp",
+      "purpose": "Error tracking para triage agéntico (Sentry SaaS con Seer; alternativa self-hosted: GlitchTip 6.1 con MCP integrado)",
+      "secrets": [
+        {
+          "key": "SENTRY_AUTH_TOKEN",
+          "source": "vault://<project>/harness/sentry"
+        }
+      ]
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "args": [],
+        "command": "gke-mcp",
+        "wrap": true
+      },
+      "detect": "GKE en el stack",
+      "mcp": "gke",
+      "name": "gke-mcp",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "deployer"
+      ],
+      "provider": "mcp",
+      "purpose": "GKE nativo de Google (clusters, workloads, logs) — complementa kubernetes-mcp"
+    }
+  ]
+}

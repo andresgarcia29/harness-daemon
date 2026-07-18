@@ -1,0 +1,30 @@
+---
+description: Ship a main vía gates deterministas + vigilancia del deploy (camino verde = cero tokens)
+argument-hint: <task-id> <repo>
+---
+
+Ship de $ARGUMENTS. Aquí tú NO decides: los gates deciden. Tu trabajo
+es correr los scripts y solo despertar en rojo.
+
+1. `scripts/ship.sh <task-id> <repo>` — rebase, trailers, gates de
+   lenguaje, buf breaking, gitleaks, semgrep, veredicto, lock, push.
+   - Falla → el mensaje trae la remediación exacta. Si es de código,
+     regresa al implementer; si es veredicto faltante, `/review`
+     primero. NO puentees un gate JAMÁS.
+2. Verde → `scripts/with-secrets.sh scripts/deploy-watch.sh <task-id> <repo>`
+   — Actions → Kargo → health ArgoCD → smoke canary.
+   - 🔴 → deploy-watch ya hizo/pidió ROLLBACK PRIMERO. Lee su log en
+     tasks/<task-id>/deploy-<repo>.log, diagnostica (kubectl/gcloud vía
+     quiet.sh + with-secrets.sh) y propón el fix como nueva tarea.
+3. 🟢 → `scripts/worktree-task.sh --rm <task-id>` si ya no quedan
+   tareas del repo, y consulta `bd ready`: ¿siguiente tarea del DAG?
+4. ¿Era la última tarea del ticket? →
+   `scripts/with-secrets.sh scripts/ticket-close.sh <TICKET> --status shipped`,
+   luego `/archive <task-id>` (fusiona el delta-spec en las specs
+   maestras — NO lo saltes: sin archive hay spec rot), y cierra con
+   `mem_save` (qué se aprendió, costo, sorpresas).
+
+Regla de autofix: si un gate de ship.sh falla, su mensaje trae la
+remediación — aplícala y reintenta, MÁXIMO 2 rondas. A la tercera
+escala a humano con el error completo. Escalar modelo (models.yaml)
+no sustituye escalar a humano.

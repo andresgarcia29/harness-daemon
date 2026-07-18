@@ -1,0 +1,77 @@
+# {{PROJECT_NAME}} — workspace del harness
+
+Workspace de ingeniería agéntica generado por
+[harness-creator](https://github.com/andresgarcia29/harness-creator)
+v{{HARNESS_VERSION}}. Este README es para HUMANOS; el mapa para agentes
+es `CLAUDE.md` y la ley vive en `docs/`.
+
+## Primer día (onboarding en una pasada)
+
+```bash
+make init
+```
+
+Eso instala las herramientas que falten, te pide credenciales si hacen
+falta (interactivo, nada pasa por ningún chat), materializa los
+secretos y corre el doctor. Es idempotente: córrelo las veces que
+quieras. Salud en cualquier momento: `make doctor`.
+
+### Secretos ({{SECRETS_SOURCE}})
+
+{{SECRETS_ONBOARDING}}
+<!-- El generador instancia esta sección según la fuente. Para vault:
+El harness lee secretos de {{VAULT_ADDR}} (KV: {{VAULT_KV_BASE}}) y los
+materializa en `.secrets` (gitignoreado). Necesitas UNA credencial: un
+periodic token de Vault en `~/.config/harness/vault-token`.
+
+¿No tienes token? Dos caminos:
+1. Tienes acceso a Vault: `export VAULT_ADDR={{VAULT_ADDR}}` →
+   `vault login -method=<tu método>` → `vault token create
+   -period=768h -policy=<policies del harness> -field=token >
+   ~/.config/harness/vault-token && chmod 600 ~/.config/harness/vault-token`
+2. No tienes acceso: pídele el token a quien administre Vault.
+
+`make init` detecta si tu token falta O expiró, te lo pide y lo valida.
+Los VALORES de secretos jamás van al repo, al chat ni a los logs. -->
+
+## Cómo se trabaja aquí
+
+Sesión de Claude Code en esta carpeta. El día a día es UNA línea:
+
+```
+/auto {{TICKET_PREFIX}}-123                      # un ticket del tracker
+/auto "agrega rate limiting por tenant, 100 req/min"   # o un prompt literal
+```
+
+`/auto` corre el pipeline entero sin preguntarte: intake → RFC →
+implement → review → ship → deploy → archive. Resuelve la ambigüedad con
+evidencia y te deja el rastro en `tasks/<id>/assumptions.md` — léelo:
+son las decisiones que se tomaron por ti. Solo para donde una ley del
+harness lo exige (ver `docs/harness/pipeline.md`).
+
+Si quieres conducir fase por fase, los comandos sueltos siguen ahí:
+`/feature <ticket>` → `/rfc` → `/implement` → `/review` → `/ship` →
+`/archive`. Reglas de entrada de tickets: `docs/harness/intake.md`.
+
+Leyes con enforcement (hook o gate — no son sugerencias):
+push a main solo vía `scripts/ship.sh` · trabajo solo en worktrees
+(`make wt TASK=<id> REPOS="..."`) · trailer `Task:` en cada commit ·
+contratos expand/contract.
+
+## Estructura
+
+| Qué | Dónde |
+|---|---|
+| Repos de producto (regenerables) | `repos/` (lista: `manifest.yaml`) |
+| Ley del proyecto | `docs/constitution.md`, `docs/adr/`, `specs/` |
+| Agentes y comandos | `.claude/agents/`, `.claude/commands/` |
+| Estado por tarea | `tasks/<id>/` |
+| Política de modelos | `models.yaml` |
+| Decisiones de instalación | `harness-answers.yaml` |
+
+## Mantenimiento
+
+- Actualizar el harness: `/harness-init .` en Claude Code (modo
+  update; idempotente, todo por diff).
+- Los documentos `status: DRAFT` requieren ratificación humana antes
+  del primer RFC — el doctor te dice cuántos quedan.

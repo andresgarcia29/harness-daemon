@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ticket-close.sh — cierra el loop harness → Linear. Cero tokens.
+# shipped: comenta commits por repo + resultado del deploy, label → shipped.
+# failed:  comenta el diagnóstico, label regresa a agent-ready.
+#
+# Uso: ticket-close.sh <TICKET-ID> --status shipped|failed [--note "..."]
+# Requiere LINEAR_API_KEY (vía with-secrets.sh).
+set -euo pipefail
+ID="${1:?uso: ticket-close.sh <TICKET-ID> --status shipped|failed}"
+STATUS=""; NOTE=""
+shift
+while [ $# -gt 0 ]; do case "$1" in
+  --status) STATUS="$2"; shift 2;;
+  --note)   NOTE="$2"; shift 2;;
+  *) echo "flag desconocido: $1"; exit 1;;
+esac; done
+[ "$STATUS" = "shipped" ] || [ "$STATUS" = "failed" ] || { echo "❌ --status shipped|failed"; exit 1; }
+WS="$(cd "$(dirname "$0")/.." && pwd)"
+API="https://api.linear.app/graphql"
+[ -n "${LINEAR_API_KEY:-}" ] || { echo "❌ LINEAR_API_KEY no está en el entorno — usa scripts/with-secrets.sh"; exit 4; }
+
+gql() {
+  curl -sf --retry 3 --retry-delay 2 --retry-all-errors -X POST "$API" -H "Authorization: $LINEAR_API_KEY" -H "Content-Type: application/json" --data "$1" \
+    || { echo "❌ error de red/auth contra Linear" >&2; exit 4; }
+}
+
+# 1 · Recolectar evidencia: commits con el trailer, por repo
+evidence=""
+for base in "$WS/repos"/*/; do
+  repo="$(basename "$base")"
+  commits="$(git -C "$base" log --all --grep "Task: $ID" --format='%h %s' 2>/dev/null || true)"
+  [ -n "$commits" ] && evidence="$evidence
+**$repo**
+\`\`\`
+$commits
+\`\`\`"
+done
+[ -f "$WS/tasks/$ID/ship.log" ] && evidence="$evidence
+**ship.log**
+\`\`\`
+$(cat "$WS/tasks/$ID/ship.log")
+\`\`\`"
+
+if [ "$STATUS" = "shipped" ]; then
+  body="✅ Shipped por el harness.$evidence
+${NOTE:+Nota: $NOTE}"
+  target_label="shipped"
+else
+  body="❌ Falló en el harness. ${NOTE:-ver task log en tasks/$ID/}"
+  target_label="agent-ready"
+fi
+
+# 2 · Resolver ids y publicar
+resp="$(gql "$(jq -n --arg id "$ID" '{query:"query($id:String!){ issue(id:$id){ id team{id} labels{nodes{id name}} } }", variables:{id:$id}}')")"
+issue="$(echo "$resp" | jq '.data.issue')"
+[ "$issue" != "null" ] || { echo "❌ ticket $ID no existe"; exit 2; }
+uuid="$(echo "$issue" | jq -r '.id')"
+team_id="$(echo "$issue" | jq -r '.team.id')"
+
+gql "$(jq -n --arg id "$uuid" --arg body "$body" \
+  '{query:"mutation($id:String!,$body:String!){ commentCreate(input:{issueId:$id, body:$body}){ success } }", variables:{id:$id, body:$body}}')" >/dev/null
+echo "✅ comentario publicado"
+
+label_id="$(gql "$(jq -n --arg t "$team_id" '{query:"query($t:String!){ team(id:$t){ labels{nodes{id name}} } }", variables:{t:$t}}')" \
+  | jq -r --arg n "$target_label" '.data.team.labels.nodes[] | select(.name==$n) | .id')"
+if [ -n "$label_id" ]; then
+  new_ids="$(echo "$issue" | jq -c --arg add "$label_id" '[.labels.nodes[] | select(.name=="in-harness" or .name=="agent-ready" | not) | .id] + [$add]')"
+  gql "$(jq -n --arg id "$uuid" --argjson ids "$new_ids" '{query:"mutation($id:String!,$ids:[String!]){ issueUpdate(id:$id, input:{labelIds:$ids}){ success } }", variables:{id:$id, ids:$ids}}')" >/dev/null
+  echo "✅ label → $target_label"
+else
+  echo "⚠️  no existe el label $target_label en el team — créalo en Linear"
+fi

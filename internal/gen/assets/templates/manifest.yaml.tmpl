@@ -1,0 +1,27 @@
+# manifest.yaml — lista canónica de repos del workspace.
+# Fuente de verdad para clonar/regenerar repos/ y para el clustering de
+# agentes. Lo genera /harness-init desde inventory.json + entrevista;
+# se edita a mano al agregar un repo (y se corre /harness-doctor).
+
+project: "{{PROJECT_NAME}}"
+harness_version: "{{HARNESS_VERSION}}"
+
+# kind: service | frontend | mobile | library | contracts | infra-module |
+#       infra-live | ci-library | docs
+# agent: qué abogado lo defiende en RFCs (ver .claude/agents/)
+repos:
+{{REPOS_LIST}}
+#  - name: atlas
+#    url: git@github.com:org/atlas.git
+#    branch: main
+#    kind: service
+#    agent: svc-atlas
+#  - name: terraform-core
+#    url: git@github.com:org/terraform-core.git
+#    branch: main
+#    kind: infra-module
+#    agent: infra
+
+# DAG de shipping (dependencias primero). Referencia del arquitecto.
+dag:
+{{DAG_LIST}}

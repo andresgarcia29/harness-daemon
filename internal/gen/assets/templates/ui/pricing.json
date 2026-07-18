@@ -1,0 +1,47 @@
+{
+  "_comment": "USD por millón de tokens. La báscula OFICIAL es ccusage; esto es un ESTIMADO. Un modelo que NO esté aquí muestra '—' en el panel: los tokens son reales, el dinero no se inventa (agrega tu modelo — GLM, Kimi, el que uses — y el histórico se re-cotiza solo). Multiplicadores de caché: lectura ~0.1x, escritura 1.25x. Verificado contra la doc de Anthropic el 2026-07-16.",
+  "_cache_read_multiplier": 0.1,
+  "_cache_write_multiplier": 1.25,
+  "models": {
+    "claude-fable-5": {
+      "input": 10.0,
+      "output": 50.0
+    },
+    "claude-mythos-5": {
+      "input": 10.0,
+      "output": 50.0
+    },
+    "claude-opus-4-8": {
+      "input": 5.0,
+      "output": 25.0
+    },
+    "claude-opus-4-7": {
+      "input": 5.0,
+      "output": 25.0
+    },
+    "claude-opus-4-6": {
+      "input": 5.0,
+      "output": 25.0
+    },
+    "claude-opus-4-5": {
+      "input": 5.0,
+      "output": 25.0
+    },
+    "claude-sonnet-5": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "claude-sonnet-4-6": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "claude-sonnet-4-5": {
+      "input": 3.0,
+      "output": 15.0
+    },
+    "claude-haiku-4-5": {
+      "input": 1.0,
+      "output": 5.0
+    }
+  }
+}

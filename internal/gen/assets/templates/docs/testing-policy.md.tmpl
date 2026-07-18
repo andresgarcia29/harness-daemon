@@ -1,0 +1,45 @@
+# Política de testing — {{PROJECT_NAME}}
+
+Los agentes son "testers entusiastas": optimizan cobertura ignorando el
+costo de ejecución. Esta política es la barrera. El reviewer la aplica
+y el mutation-sentinel la audita.
+
+## Presupuestos de duración (gate: la suite que se infla, se rechaza)
+
+| Nivel | Presupuesto | Qué va aquí |
+|---|---|---|
+| Unit | **< 60 s** por repo | Lógica pura, sin red/disco/DB. El default: si puede ser unit, ES unit |
+| Integración | **< 5 min** por repo | Fronteras reales: DB (testcontainers/emulador), gRPC entre 2 servicios |
+| E2E / smoke | **< 5 min**, solo flujos críticos | Playwright contra preview/canary. Pocos y sagrados |
+
+Árbol de decisión: ¿necesita I/O real? no → unit. ¿Cruza 2+ servicios?
+no → integración con testcontainers. ¿Es un criterio de aceptación de
+cara al usuario? sí → e2e (uno, no cinco variantes).
+
+## Reglas duras
+
+1. **Un requirement del delta-spec = al menos un test que lo mata.**
+   La compliance matrix del reviewer lo verifica; ship.sh lo exige.
+2. **Snapshots/goldens NUNCA se regeneran a ciegas.** El permiso de
+   actualizarlos (`-u`, `--update-snapshots`, `UPDATE_SNAPS`) está
+   denegado a los agentes; un snapshot cambiado exige justificación en
+   la tarea o el veredicto es `fail`. Regenerar el snapshot es corregir
+   tu propio examen.
+3. **Nada de `sleep` en tests** — espera por condición (regla semgrep).
+4. **Property-based donde hay invariantes**: parsers, serialización,
+   cálculos de dinero/fechas → rapid (Go) / Hypothesis (Py) /
+   fast-check (TS). Un property test vale por veinte examples.
+5. **Los tests de un fix reproducen el bug primero** (rojo→verde,
+   constitución §4).
+6. **Flaky = cuarentena, no reintento infinito.** El flake-warden lo
+   detecta; un test en cuarentena tiene issue con dueño y fecha.
+
+## Qué audita cada quien
+
+- **reviewer**: compliance matrix, snapshots justificados, nivel
+  correcto de la pirámide, duración estimada.
+- **mutation-sentinel** (cron semanal): tests que no matan mutantes en
+  rutas críticas = "tests-teatro"; genera el test que falta.
+- **flake-warden** (cron nocturno): flip-rate y cuarentena.
+- **ratchet-keeper**: la cobertura del diff no baja (diff-cover); la
+  suite no supera su presupuesto de duración.

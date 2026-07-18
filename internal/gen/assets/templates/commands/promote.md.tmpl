@@ -1,0 +1,26 @@
+---
+description: Ritual semanal — la memoria propone, git dispone (episódico → ADR / regla / hook / expira)
+argument-hint: (sin argumentos)
+---
+
+Ritual /promote de {{PROJECT_NAME}}: convertir memoria episódica en ley
+versionada. La memoria que no se promueve, expira — git es la única
+verdad duradera.
+
+1. **Cosecha**: `mem_search` de la última semana (decisiones, errores
+   repetidos, sorpresas). Complementa con tasks/*/verdict-*.json
+   (¿qué blocking se repite?) y docs/changelog/ de la semana.
+2. **Clasifica cada hallazgo**:
+   - **Decisión madura** (sobrevivió 2+ tareas sin cambiar) → borrador
+     de ADR en docs/adr/ (usa la plantilla ADR-0000).
+   - **Error repetido** (2+ veces en veredictos o deploys) → propón la
+     BARRERA: regla semgrep con remediación en semgrep/rules.yaml, o
+     hook, o gate en ship.sh. El error que solo vive en la memoria se
+     repite; el que vive en un gate, no.
+   - **Convención emergente** → línea en el CLAUDE.md del repo que
+     corresponda (no el global).
+   - **Ruido / superado** → márcalo para expirar. No acumules.
+3. **Presenta el lote al humano** como propuestas de diff (ADRs, reglas,
+   hooks) — NADA se aplica sin su ok. La ley la ratifican humanos.
+4. Aplicado el lote: `mem_save` del resultado del ritual y actualiza
+   docs/quality.md si cambió la salud de algún dominio.

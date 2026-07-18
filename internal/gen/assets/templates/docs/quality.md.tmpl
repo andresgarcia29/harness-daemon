@@ -1,0 +1,23 @@
+---
+verified_at: {{GENERATED_AT}}
+---
+
+# Salud por dominio — {{PROJECT_NAME}}
+
+Califica la CONFIANZA que un agente puede tener en cada dominio: docs
+al día, tests que protegen, deuda conocida. La llena la arqueología
+inicial y la actualiza /promote.
+
+| Dominio / repo | Docs | Tests | Deuda tolerada (con fecha de caducidad) | Nota para agentes |
+|---|---|---|---|---|
+{{QUALITY_TABLE}}
+
+Leyenda: 🟢 confiable · 🟡 verificar contra código antes de usar ·
+🔴 caja negra (requiere arqueología antes de tareas no triviales).
+
+## Reglas
+
+- Un dominio 🔴 no acepta tareas de riesgo hasta pasar por arqueología
+  (dossier en docs/services/ + este cuadro actualizado).
+- "Deuda tolerada" sin fecha de caducidad no es deuda tolerada, es
+  negación. Toda entrada lleva fecha o se convierte en ticket.

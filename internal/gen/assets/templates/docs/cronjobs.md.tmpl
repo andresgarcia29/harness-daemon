@@ -1,0 +1,58 @@
+# Self-healing — cronjobs del harness de {{PROJECT_NAME}}
+
+Arquitectura (no negociable): el **detector determinista** (script, cero
+LLM) produce hallazgos; el **agente solo despierta** si hay algo que
+arreglar, con modelo/esfuerzo/presupuesto USD de `models.yaml`; todo
+aterriza como **PR o issue** — jamás push a main. El camino verde
+cuesta cero tokens. Ejecutor: `scripts/cronjobs/cron-runner.sh`, con
+circuit breaker (3 fallos → se apaga y avisa) y ledger de gasto
+(`.cache/cron/ledger.jsonl`) que el daily-digest reporta.
+
+## Catálogo (por ROI)
+
+| Job | Cadencia sugerida | Detecta | El agente… | Tier |
+|---|---|---|---|---|
+| ci-doctor | cada 30 min (o workflow_run) | runs rojos en main | fix quirúrgico o PR de revert | medium |
+| dep-shepherd | tras Renovate diario | PRs de deps sin automerge | matriz de riesgo, grep de imports, merge o fix | medium |
+| vuln-watch | `0 3 * * *` | vulns NUEVAS (osv-scanner, diff vs ayer) | PR de bump con tests | medium |
+| flake-warden | `0 1 * * *` | flip-rate en JUnit XML archivados | cuarentena + root-cause top 3 | expensive |
+| daily-digest | `0 6 * * 1-5` | (siempre) | changelog + Slack + gasto de la noche | cheap |
+| dead-code-reaper | `0 2 * * 6` | knip/vulture/deadcode vs whitelist | borra en lotes con tests; FP → whitelist | medium |
+| ratchet-keeper | `0 4 * * *` | supresiones de lint vs high-water-mark | bump del piso o issue de regresión | cheap |
+| mutation-sentinel | `0 0 * * 0` (4h tope) | mutantes supervivientes en lo cambiado | escribe el test que los mata | expensive |
+| doc-gardener | `0 5 * * *` | links rotos, símbolos perdidos, D2 drift, specs viejas | PR de jardinería | cheap |
+| slo-watchdog | webhook Alertmanager | burn-rate crítico | diagnóstico read-only + PR de revert | medium |
+| harness-janitor | `0 23 * * *` | worktrees/ramas/locks huérfanos; memoria inflada | destila memoria; archiva zombies | cheap |
+| rule-miner | `0 3 1 * *` (mensual) | commits fix/revert + blocking repetidos | mina reglas semgrep VALIDADAS | expensive |
+
+rule-miner es el multiplicador: convierte cada bug del mes en un
+detector determinista nuevo — el sistema mejora sin ampliar gasto.
+
+## Cómo correrlos
+
+**Local/VPS (crontab):**
+```
+0 5 * * * cd {{WORKSPACE}} && bash scripts/cronjobs/cron-runner.sh scripts/cronjobs/jobs/doc-gardener.sh
+```
+
+**GKE:** instanciar `k8s-cronjob.yaml` por job (auth Vertex + Workload
+Identity — sin tokens de larga vida; alternativa: `claude setup-token`
+→ secret `CLAUDE_CODE_OAUTH_TOKEN`, dura 1 año).
+
+**Manual (probar un job):**
+```
+bash scripts/cronjobs/cron-runner.sh scripts/cronjobs/jobs/daily-digest.sh
+```
+
+## Reglas transversales
+
+1. El agente de un cronjob **nunca** pushea a main ni ejecuta nada
+   mutante en el cluster. PR/issue siempre; el CI completo re-valida.
+2. El único rollback automático permitido es el abort-to-stable de
+   Argo Rollouts (no muta git). `argocd app rollback` está DENEGADO.
+3. Presupuesto por invocación (`models.yaml → budgets`), tope duro de
+   4h por Job, `concurrencyPolicy: Forbid`.
+4. Falso positivo del detector → se corrige el DETECTOR (whitelist,
+   umbral), no se fuerza el arreglo. Los detectores también tienen deuda.
+5. Prerequisitos por job: los detectores degradan con gracia (skip) si
+   falta su herramienta — `/harness-doctor` reporta cuáles faltan.

@@ -1,0 +1,32 @@
+---
+description: Cierra el ciclo SDD — fusiona el delta-spec en las specs maestras cuando el deploy quedó verde
+argument-hint: <task-id>
+---
+
+Archive de $ARGUMENTS. Esta es la pieza por la que el SDD vive o muere:
+si la fusión depende de disciplina humana, habrá spec rot en un
+trimestre — y una spec podrida es PEOR que ninguna, porque los agentes
+la ejecutan con confianza.
+
+Precondición: el deploy de TODAS las tareas del ticket está verde
+(ship.log completo + deploy-watch 🟢). Si no, PARA.
+
+1. **Recolecta write-backs**: lee tasks/<id>/delta-spec.md Y las notas
+   de desviación que los implementers dejaron durante la ejecución
+   (spec bidireccional: lo descubierto en el worktree — "existía un
+   provider, se reutilizó" — se incorpora al delta ANTES de fusionar).
+2. **Fusiona el delta en las specs maestras** (`specs/<capability>/`):
+   - ADDED → agrega el requirement con su ID definitivo y sus tests.
+   - MODIFIED → reemplaza el requirement citando el task-id en el
+     historial.
+   - REMOVED → elimina y anota en el archive por qué.
+   Actualiza `verified_at` de cada spec tocada.
+3. **Archiva el cambio completo**: mueve los artefactos de la tarea
+   (task.md, plan.md, delta-spec.md, veredictos, ship.log) a
+   `tasks/archive/YYYY-MM-DD-<id>/`. El archive es AUDIT TRAIL: nunca
+   se edita ni borra.
+4. **Propón como diff** la fusión de specs al humano si algún
+   requirement MODIFIED/REMOVED toca una spec ratificada — la ley la
+   cambian humanos. ADDED puros: aplica directo.
+5. Cierra: `mem_save` del ciclo (qué cambió en las specs, costo total
+   del ticket) y verifica que docs/quality.md refleje el nuevo estado.

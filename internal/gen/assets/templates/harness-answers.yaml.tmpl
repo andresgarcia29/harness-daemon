@@ -1,0 +1,96 @@
+# harness-answers.yaml — registro canónico de las decisiones de la entrevista.
+# Lo escribe /harness-init; lo leen doctor.sh (verificación determinista) y
+# /harness-update (re-instanciación). El ESQUEMA es fijo — doctor.sh lo parsea
+# con grep/awk; cambiar la forma rompe la verificación. Cambiar VALORES está
+# bien: edítalos y corre /harness-doctor.
+#
+# REGLA: aquí van referencias a secretos (env:// | vault:// | gcp-sm://),
+# JAMÁS valores.
+
+harness_version: "{{HARNESS_VERSION}}"
+generated_at: "{{GENERATED_AT}}"
+
+project:
+  name: "{{PROJECT_NAME}}"
+  ticket_prefix: "{{TICKET_PREFIX}}"
+
+# Dónde se versiona ESTA instancia: "self" (git init en el workspace) o
+# la URL del repo destino. Si ese repo estaba clonado en repos/, queda
+# EXCLUIDO del clustering, del DAG y del manifest.
+instance:
+  repo: {{INSTANCE_REPO}}
+
+# trunk-direct-to-prod | trunk-staging | prs
+flow: {{FLOW}}
+
+# Sandwich de razonamiento: juicio caro solo donde hay juicio.
+models:
+  architect: {{MODEL_ARCHITECT}}      # planeación, síntesis de RFC
+  reviewer: {{MODEL_REVIEWER}}        # veredictos de review
+  implementer: {{MODEL_IMPLEMENTER}}  # ejecución de tareas
+  mechanical: {{MODEL_MECHANICAL}}    # digest, triage, commits
+
+loop_budget: {{LOOP_BUDGET}}
+
+# Autonomía de /auto (ticket o prompt → producción, sin intervención):
+#   full       → nunca pausa; gates + canary + rollback son la red
+#   checkpoint → UNA pausa: resumen antes del primer ship a main
+# Gradúa cuándo se toca main, NO cuánto piensa el humano: /auto redacta
+# criterios y resuelve ambigüedad solo en ambos modos (ledger de
+# supuestos). Para conducir fase por fase: comandos sueltos, no /auto.
+autonomy: {{AUTONOMY}}
+
+# Orden de shipping: dependencias primero. Verificado por el arquitecto
+# en cada plan; ship.sh no lo impone (los contratos expand/contract lo
+# vuelven no-crítico), pero es la referencia.
+dag:
+{{DAG_LIST}}
+
+# Topología de agentes decidida en la entrevista (clustering dinámico):
+# un abogado por servicio que POSEE datos; un agente por cluster para
+# repos homogéneos sin ownership de datos (terraform modules, frontends).
+clusters:
+{{CLUSTERS_LIST}}
+#  - agent: svc-atlas
+#    kind: service          # service | infra | frontend | contracts
+#    repos: [atlas]
+#    owns: "identidad y tenancy"
+#  - agent: infra
+#    kind: infra
+#    repos: [terraform-core, terraform-app-module, helm-library]
+
+# Capacidades palomeadas del catálogo. doctor.sh verifica:
+#   bin: <x>   → command -v <x>
+#   mcp: <x>   → clave <x> presente en .mcp.json
+#   scope:     → core (falta = ❌ fallo) | cronjob (falta = ⚠️ warning,
+#                solo lo usa un detector de cronjob)
+# REGLA: con cronjobs deshabilitados NO se seleccionan capacidades
+# cronjob-only; quedan comentadas como pendientes.
+capabilities:
+{{CAPABILITIES_LIST}}
+#  - name: gh
+#    bin: gh
+#    tier: read-write
+#    scope: core
+#  - name: lychee
+#    bin: lychee
+#    tier: read-only
+#    scope: cronjob        # detector de doc-gardener
+#  - name: serena
+#    mcp: serena
+#    tier: read-write
+#    profiles: [implementer]
+
+secrets:
+  source: {{SECRETS_SOURCE}}   # vault | gcp-secret-manager | env
+  refs:
+{{SECRETS_REFS}}
+#    - env://GH_TOKEN
+#    - vault://corvux/harness/argocd
+
+tickets:
+  provider: {{TICKETS_PROVIDER}}   # linear | github | none
+
+memory:
+  provider: {{MEMORY_PROVIDER}}    # engram | none
+  profiles: [{{MEMORY_PROFILES}}]  # default: orquestador, arquitecto

@@ -1,0 +1,33 @@
+---
+description: Intake de un ticket al harness (valida, materializa task.md, o rebota con preguntas)
+argument-hint: <TICKET-ID | descripción corta>
+---
+
+Intake del pipeline para $ARGUMENTS. El contrato de entrada es
+`docs/harness/intake.md` — un ticket que no lo cumple SE REBOTA:
+rebotar cuesta centavos; implementar ambigüedad cuesta el pipeline
+entero.
+
+1. **Materializa.** Si es un ID de ticket ({{TICKET_PREFIX}}-N):
+   `scripts/with-secrets.sh scripts/ticket-pull.sh <ID>`.
+   - exit 3 (sin label agent-ready): lee el ticket igualmente (el
+     script te dijo por qué); pasa al paso 2 como candidato a rebote.
+   - Si es descripción libre (sin tracker): crea `tasks/<id>/task.md`
+     tú mismo con el formato de la plantilla, pidiendo al humano lo que
+     falte.
+2. **Valida contra los criterios de rebote** (intake.md §criterios):
+   sin criterios de aceptación verificables · bug sin repro · decisión
+   de arquitectura no tomada (→ primero ADR) · contradice un ADR
+   vigente (cítalo) · mezcla features independientes (→ dividir).
+3. **Rebote**: redacta el comentario con preguntas CONCRETAS y el
+   borrador de criterios que tú infieras, y PUBLÍCALO directo (el
+   rebote está pre-aprobado — no pidas permiso para rebotar). Etiqueta
+   needs-spec. Si un label de flujo no existe en el team
+   (needs-spec/agent-ready/in-harness/shipped), CRÉALO sin preguntar.
+   FIN — no sigue al RFC.
+4. **Pasa**: confirma repos probablemente afectados (inventory.json +
+   grafo si hay dudas), resume el ticket en 3 líneas al humano, y
+   sugiere: `/rfc <task-id>`.
+
+Nunca implementes nada en este comando. Intake decide si el trabajo
+ENTRA, nada más.

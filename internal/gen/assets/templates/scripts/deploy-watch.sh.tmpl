@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# deploy-watch.sh — el DEPLOYER es script, no agente. Cero tokens en verde;
+# los agentes solo despiertan en rojo (este script les deja el diagnóstico
+# inicial en tasks/<id>/deploy-<repo>.log).
+#
+# Vigila: Actions → Kargo (si aplica) → health de ArgoCD → smoke.
+# ROJO: rollback PRIMERO ({{ROLLBACK_MODE}}), diagnóstico después.
+#
+# Uso: deploy-watch.sh <task-id> <repo>
+# Córrelo autenticado: scripts/with-secrets.sh scripts/deploy-watch.sh ...
+set -uo pipefail
+
+TASK="${1:?uso: deploy-watch.sh <task-id> <repo>}"
+REPO="${2:?uso: deploy-watch.sh <task-id> <repo>}"
+WS="$(cd "$(dirname "$0")/.." && pwd)"
+
+# El bus: el humano mira el panel, no esta consola. Fail-open.
+# (Va DESPUÉS de definir WS: con set -u, referenciar $WS antes de asignarlo
+# mata el script — y un bus que tumba el deploy-watch es lo contrario de
+# lo que promete. Nos pasó: la primera versión de esta línea iba arriba.)
+# shellcheck source=/dev/null
+[ -f "$WS/scripts/emit.sh" ] && . "$WS/scripts/emit.sh" || emit() { :; }
+LOG="$WS/tasks/$TASK/deploy-$REPO.log"; mkdir -p "$WS/tasks/$TASK"
+ORG="{{GITHUB_ORG}}"
+APP="{{ARGO_APP_PREFIX}}$REPO"
+TIMEOUT="${DEPLOY_TIMEOUT:-900}"
+ROLLBACK_MODE="{{ROLLBACK_MODE}}"   # auto | manual
+
+say() { echo "$1" | tee -a "$LOG"; }
+
+# Jerarquía de rollback (rollback PRIMERO, diagnóstico después):
+#  1. Si el workload usa Argo Rollouts: el AnalysisTemplate ya abortó a
+#     stable SOLO (tráfico, sin mutar git) — el único rollback
+#     totalmente automático que es seguro. Aquí solo se verifica.
+#  2. Revert en GIT (PR/commit de revert vía ship.sh) — lo propone este
+#     script; lo ejecuta el agente/humano.
+#  3. `argocd app rollback` es el ÚLTIMO recurso MANUAL: crea drift
+#     git↔cluster y exige desactivar auto-sync. Nunca automático.
+red() { # red <motivo>
+  say "🔴 $1"
+  emit deploy "$REPO — $1" false
+  emit stop "deploy rojo de $REPO: rollback primero; diagnóstico en tasks/$TASK/deploy-$REPO.log"
+  if command -v kubectl >/dev/null && kubectl argo rollouts get rollout "$APP" >/dev/null 2>&1; then
+    say "⏪ workload con Argo Rollouts: verifica el abort-to-stable automático:"
+    say "   kubectl argo rollouts status $APP"
+  fi
+  last_sha="$(tail -1 "$WS/tasks/$TASK/ship.log" 2>/dev/null | jq -r '.sha // empty')"
+  if [ "$ROLLBACK_MODE" = "auto" ] && [ -n "$last_sha" ]; then
+    say "⏪ preparando revert en git de $last_sha (GitOps-safe; ArgoCD lo sincroniza solo):"
+    say "   cd repos/$REPO && git revert --no-edit $last_sha  → luego ship.sh del revert"
+  else
+    say "⏪ revert manual sugerido del commit $last_sha (git revert, NUNCA argocd app rollback salvo emergencia humana)"
+  fi
+  say "🩺 diagnóstico inicial en $LOG — despierta al agente con este contexto"
+  exit 1
+}
+
+# 1 · GitHub Actions del push a main
+if command -v gh >/dev/null; then
+  say "── actions: $ORG/$REPO@main ──"
+  run_id="$(gh run list --repo "$ORG/$REPO" --branch main --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")"
+  if [ -n "$run_id" ]; then
+    gh run watch --repo "$ORG/$REPO" "$run_id" --exit-status >>"$LOG" 2>&1 \
+      || red "Actions falló (run $run_id). Logs: gh run view --repo $ORG/$REPO $run_id --log-failed"
+    say "✅ actions verde (run $run_id)"
+  else
+    say "⚠️ no encontré runs — ¿el repo tiene workflows?"
+  fi
+fi
+
+# 2 · Kargo: promoción del freight (si el pipeline lo usa)
+if command -v kargo >/dev/null; then
+  say "── kargo: esperando promoción ──"
+  kargo get promotions --project "{{KARGO_PROJECT}}" 2>>"$LOG" | tail -5 | tee -a "$LOG" || say "⚠️ kargo no respondió (¿token?)"
+fi
+
+# 3 · Health de ArgoCD con timeout
+# Auth: ARGOCD_AUTH_TOKEN (ideal) o fallback user/pass si el Vault del
+# proyecto guarda credenciales así — con login previo. Recomendado:
+# migrar a token de cuenta (`argocd account generate-token`).
+if command -v argocd >/dev/null && [ -z "${ARGOCD_AUTH_TOKEN:-}" ] \
+   && [ -n "${ARGOCD_USERNAME:-}" ] && [ -n "${ARGOCD_PASSWORD:-}" ]; then
+  srv="${ARGOCD_URL:-}"; srv="${srv#https://}"; srv="${srv#http://}"
+  argocd login "$srv" --username "$ARGOCD_USERNAME" --password "$ARGOCD_PASSWORD" --grpc-web >/dev/null 2>&1 \
+    && say "argocd: sesión iniciada con usuario (considera migrar a ARGOCD_AUTH_TOKEN)" \
+    || say "⚠️ argocd login falló — health check probablemente falle también"
+fi
+if command -v argocd >/dev/null; then
+  say "── argocd: esperando $APP Healthy+Synced (timeout ${TIMEOUT}s) ──"
+  argocd app wait "$APP" --health --sync --timeout "$TIMEOUT" >>"$LOG" 2>&1 \
+    || red "$APP no llegó a Healthy+Synced en ${TIMEOUT}s"
+  say "✅ $APP Healthy + Synced"
+fi
+
+# 4 · Smoke del canary tenant (si existe para el repo)
+if [ -x "$WS/scripts/smoke/$REPO.sh" ]; then
+  say "── smoke: $REPO ──"
+  "$WS/scripts/smoke/$REPO.sh" >>"$LOG" 2>&1 || red "smoke del canary falló"
+  say "✅ smoke verde"
+else
+  say "⚠️ sin smoke para $REPO (scripts/smoke/$REPO.sh) — agrégalo; el canary es la última defensa"
+fi
+
+emit deploy "$REPO verificado: actions + argocd + smoke en verde" true
+say "🟢 deploy de $REPO verificado — siguiente tarea del DAG"

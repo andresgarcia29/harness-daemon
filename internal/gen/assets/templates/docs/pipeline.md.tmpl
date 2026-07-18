@@ -1,0 +1,73 @@
+# Pipeline del harness — {{PROJECT_NAME}}
+
+Regla de oro: **los agentes proponen, los sistemas deterministas
+verifican**. Todo check que un script pueda hacer, lo hace un script;
+los agentes solo despiertan en rojo. Camino verde = cero tokens.
+
+## El flujo
+
+Dos formas de recorrerlo. **A mano**, fase por fase (abajo), cuando
+quieres inspeccionar el trabajo entre pasos. O **`/auto <ticket |
+"prompt">`**, que encadena TODAS las fases sin intervención: mismo
+pipeline, mismos gates, mismas paradas — lo único que cambia es que no
+hay humano entre fase y fase. El intake de `/auto` no rebota (no hay a
+quién): redacta los criterios faltantes y declara cada ambigüedad
+resuelta en `tasks/<id>/assumptions.md`.
+
+```
+/feature (intake)          valida el ticket o lo rebota (needs-spec)
+   ↓ tasks/<id>/task.md
+/rfc                       abogados responden UNA vez (JSON) · arquitecto sintetiza
+   ↓ tasks/<id>/plan.md + beads (DAG con deps)
+/implement                 worktrees + implementers por tarea (paralelo si el DAG lo permite)
+   ↓ commits con trailer Task: <id>
+/review                    reviewer → verdict-<repo>.json · qa local → campo qa
+   ↓ verdict: pass + qa: pass
+/ship                      ship.sh (gates) → deploy-watch.sh (Actions→Kargo→ArgoCD→smoke)
+   ↓ 🟢 siguiente tarea del DAG   |   🔴 ROLLBACK PRIMERO, diagnóstico después
+ticket-close.sh            comenta evidencia y cierra el ticket
+```
+
+## Roles
+
+| Rol | Quién | Modelo | Regla dura |
+|---|---|---|---|
+| Orquestador | la sesión principal (o /auto) | — | orquesta, no implementa |
+| Intake | /feature (o el paso 0 de /auto) | {{MODEL_MECHANICAL}} | rebota ambigüedad; en /auto la resuelve con evidencia y la declara |
+| Abogados | agentes de cluster (svc-*, infra, frontends) | {{MODEL_ARCHITECT}} | responden UNA vez, JSON; no implementan |
+| Arquitecto | agente architect | {{MODEL_ARCHITECT}} | máx 2 rondas de RFC; produce plan+beads |
+| Implementer | agente implementer (por tarea) | {{MODEL_IMPLEMENTER}} | un worktree, un repo, un scope |
+| Reviewer | agente reviewer | {{MODEL_REVIEWER}} | veredicto JSON; blocking con remediación |
+| QA | agente qa | {{MODEL_IMPLEMENTER}} | ejercita criterios, no opina de código |
+| Deployer | scripts (ship.sh, deploy-watch.sh) | ninguno | los gates no se puentean |
+
+## Artefactos por tarea (`tasks/<id>/`)
+
+`task.md` (ticket materializado, o redactado por /auto desde un prompt) ·
+`assumptions.md` (ledger de supuestos — solo /auto) · `plan.md` (del
+arquitecto) · `verdict-<repo>.json` (reviewer+qa) · `ship.log` ·
+`deploy-<repo>.log`. Estado en ARCHIVOS, no en conversación: cualquier
+sesión puede retomar (`/auto <task-id>`).
+
+### El ledger de supuestos (`assumptions.md`)
+
+Cuando no hay humano al que rebotarle, la ambigüedad no desaparece: se
+hace explícita y barata de revertir. Cada línea dice qué se asumió, con
+qué evidencia (spec > ADR > CLAUDE.md del repo > patrón del código) y
+qué cuesta deshacerlo si el supuesto era falso. Es lo primero que audita
+un humano en el reporte de /auto, y su material de `/promote`: un
+supuesto que resultó falso se vuelve una regla para que el siguiente
+/auto no lo repita.
+
+## Presupuestos (Ley 6)
+
+- Loop implementer↔reviewer: máx {{LOOP_BUDGET}} iteraciones → humano.
+- RFC: 1 ronda normal, 2 máximo → humano.
+- Sesiones cortas y desechables por tarea; nunca llegar a compactación.
+
+## Memoria
+
+- Al INICIAR tarea: `mem_search` (task-id, repos). Al CERRAR:
+  `mem_save` (qué/por qué/aprendido/costo).
+- Semanal: `/promote` — decisión madura→ADR; error repetido→regla o
+  gate; ruido→expira. La memoria propone, git dispone.

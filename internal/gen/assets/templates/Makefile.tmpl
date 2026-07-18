@@ -1,0 +1,35 @@
+# Makefile — interfaz humana del harness de {{PROJECT_NAME}}.
+# Los agentes usan los scripts/comandos directamente; esto es para ti.
+.DEFAULT_GOAL := help
+
+help: ## esta ayuda
+	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+init: ## onboarding de una pasada: deps + token + secretos + doctor
+	@bash scripts/bootstrap.sh
+
+doctor: ## salud del harness (CLIs, MCPs, hooks, links, secretos)
+	@bash scripts/doctor.sh .
+
+secrets: ## materializa secretos ({{SECRETS_SOURCE}} → .secrets)
+	@bash scripts/secrets.sh pull
+
+wt: ## crea worktrees: make wt TASK=<id> REPOS="a b"
+	@bash scripts/worktree-task.sh $(TASK) $(REPOS)
+
+wt-rm: ## quita worktrees de una tarea: make wt-rm TASK=<id>
+	@bash scripts/worktree-task.sh --rm $(TASK)
+
+ship: ## gates + push: make ship TASK=<id> REPO=<repo>
+	@bash scripts/ship.sh $(TASK) $(REPO)
+
+watch: ## vigila el deploy: make watch TASK=<id> REPO=<repo>
+	@bash scripts/with-secrets.sh bash scripts/deploy-watch.sh $(TASK) $(REPO)
+
+usage: ## costo por sesión/tarea (ccusage — la báscula oficial)
+	@ccusage
+
+ui: ## panel en vivo: agentes, fases, tokens, terminales, otras máquinas (solo lectura, solo 127.0.0.1)
+	@bash scripts/ui/panel.sh $(or $(PORT),7717)
+
+.PHONY: help init doctor secrets wt wt-rm ship watch usage ui
