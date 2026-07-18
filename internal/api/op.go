@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
@@ -54,12 +55,31 @@ func NewOp(ws, wsID string, db *sql.DB, port int) *Op {
 }
 
 // Guard valida token + Host + tamaño. Devuelve el body o escribe el error.
-func (o *Op) Guard(rw http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+// HostAllowed defiende contra DNS-rebinding: sólo aceptamos si el navegador
+// mandó Host 127.0.0.1/localhost (un sitio malicioso rebindeado mandaría su
+// propio hostname). Se aplica también a las LECTURAS que ahora exponen infra
+// remota (targets con su SSH) y disparan conexiones — no sólo al plano de operar.
+func HostAllowed(r *http.Request) bool {
 	host := r.Host
 	if h, _, ok := strings.Cut(host, ":"); ok {
 		host = h
 	}
-	if host != "127.0.0.1" && host != "localhost" {
+	return host == "127.0.0.1" || host == "localhost"
+}
+
+// GuardRead protege un endpoint de LECTURA con el check de Host (sin token: el
+// token anti-CSRF es para mutaciones; las lecturas ya no cruzan orígenes porque
+// CORS bloquea leer la respuesta, pero el Host frena el rebinding).
+func GuardRead(rw http.ResponseWriter, r *http.Request) bool {
+	if !HostAllowed(r) {
+		http.Error(rw, `{"error":"host no permitido"}`, 403)
+		return false
+	}
+	return true
+}
+
+func (o *Op) Guard(rw http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	if !HostAllowed(r) {
 		http.Error(rw, `{"ok":false,"error":"host no permitido"}`, 403)
 		return nil, false
 	}
@@ -556,8 +576,34 @@ func (o *Op) OpTargets(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(rw, 200, map[string]any{"ok": true, "targets": LoadTargets()})
+	case "status":
+		// proba TODOS los targets en paralelo (para los dots de conexión).
+		ts := LoadTargets()
+		out := make([]map[string]any, len(ts))
+		var wg sync.WaitGroup
+		for i := range ts {
+			wg.Add(1)
+			go func(i int, t Target) {
+				defer wg.Done()
+				p := herdr.Remote(t.SSH).Probe()
+				out[i] = map[string]any{"name": t.Name, "reachable": p.Reachable,
+					"ssh_ok": p.SSHOK, "running": p.Running, "message": p.Message}
+			}(i, ts[i])
+		}
+		wg.Wait()
+		writeJSON(rw, 200, map[string]any{"ok": true, "status": out})
+	case "test":
+		// probar un SSH (el que se está escribiendo en el diálogo) antes de guardarlo.
+		ssh := strings.TrimSpace(s(b, "ssh"))
+		if !validTargetSSH(ssh) {
+			fail(rw, 400, "destino SSH inválido")
+			return
+		}
+		p := herdr.Remote(ssh).Probe()
+		writeJSON(rw, 200, map[string]any{"ok": true, "probe": map[string]any{
+			"reachable": p.Reachable, "ssh_ok": p.SSHOK, "running": p.Running, "message": p.Message}})
 	default:
-		fail(rw, 400, "acción desconocida (add|remove)")
+		fail(rw, 400, "acción desconocida (add|remove|status|test)")
 	}
 }
 

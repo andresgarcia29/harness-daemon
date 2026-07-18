@@ -64,6 +64,7 @@ type Agent struct {
 type State struct {
 	Available  bool        `json:"available"` // el server corre y respondió el snapshot
 	Installed  bool        `json:"installed"` // el binario herdr está en el PATH
+	Stale      bool        `json:"stale,omitempty"` // remoto: SSH no respondió, mostrando lo último
 	Version    string      `json:"version"`
 	Reason     string      `json:"reason,omitempty"`
 	Workspaces []Workspace `json:"workspaces"`
@@ -99,16 +100,31 @@ func Remote(target string) Client { return Client{target: strings.TrimSpace(targ
 // Local es el cliente de esta máquina (retrocompatibilidad).
 func Local() Client { return Client{} }
 
+// controlDir es un directorio PROPIO 0700 para los sockets de ControlMaster —
+// NO /tmp (world-writable): en un host compartido un co-tenant podría pre-crear
+// el socket en una ruta predecible y secuestrar la conexión multiplexada. Con
+// un dir 0700 sólo nuestro usuario escribe ahí. Cae a os.TempDir si no hay HOME.
+func controlDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return os.TempDir()
+	}
+	d := filepath.Join(home, ".ssh", "harness-cm")
+	_ = os.MkdirAll(d, 0o700)
+	return d
+}
+
 // sshBase son las opciones de ssh: sin password, timeout corto, y ControlMaster
 // para reusar UNA conexión autenticada (el snapshot corre cada 2s — sin esto
-// pagaríamos un handshake SSH cada vez).
+// pagaríamos un handshake SSH cada vez). ControlPath usa %C (hash opaco de la
+// conexión): nombre impredecible y corto (evita el límite ~104 del socket unix).
 func sshBase() []string {
 	return []string{
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=6",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=" + filepath.Join(os.TempDir(), "harness-ssh-%r@%h:%p"),
+		"-o", "ControlPath=" + filepath.Join(controlDir(), "%C"),
 		"-o", "ControlPersist=30s",
 	}
 }
@@ -138,12 +154,15 @@ func (c Client) run(timeout time.Duration, args ...string) ([]byte, error) {
 	}
 	remote := "herdr " + shJoin(args)
 	sshArgs := append(sshBase(), c.target, remote)
-	return exec.CommandContext(ctx, "ssh", sshArgs...).Output()
-}
-
-// run local (retrocompatibilidad con los helpers que no son target-aware).
-func run(timeout time.Duration, args ...string) ([]byte, error) {
-	return Client{}.run(timeout, args...)
+	out, err := exec.CommandContext(ctx, "ssh", sshArgs...).Output()
+	if err != nil {
+		// el stderr de ssh trae la causa real (Permission denied, Connection
+		// refused, herdr: not found…); lo pegamos al error para no perderlo.
+		if ee, okk := err.(*exec.ExitError); okk && len(ee.Stderr) > 0 {
+			return out, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
+	}
+	return out, err
 }
 
 // Snapshot lee el estado vivo. Fail-open: si herdr no está o el server no
@@ -157,6 +176,14 @@ func Snapshot() State { return Client{}.Snapshot() }
 // casos: no instalado, instalado pero server parado, y (remoto) no alcanzable
 // por SSH — cada uno con su razón, para que el panel ofrezca lo correcto.
 func (c Client) Snapshot() State {
+	// Dedupe de frescura (sólo remoto): si varios paneles/SSE ven el mismo VPS,
+	// comparten un fetch reciente en vez de cada uno lanzar su tormenta de SSH.
+	// Ventana corta (<intervalo SSE) para que un solo cliente siga fresco.
+	if c.target != "" {
+		if st, ok := snapRecent(c.target, 800*time.Millisecond); ok {
+			return st
+		}
+	}
 	empty := func() State {
 		return State{Workspaces: []Workspace{}, Panes: []Pane{}, Tabs: []Tab{}, Agents: []Agent{}, Sessions: []Session{}}
 	}
@@ -169,9 +196,34 @@ func (c Client) Snapshot() State {
 			return st
 		}
 	}
-	sessions, slErr := c.sessionList()
-	out, err := c.run(4*time.Second, "api", "snapshot")
+	// Las dos lecturas son independientes; en remoto cada una es un round-trip
+	// SSH, así que en paralelo reducimos la latencia a la mitad.
+	type sres struct {
+		ss  []Session
+		err error
+	}
+	type ares struct {
+		out []byte
+		err error
+	}
+	sch, ach := make(chan sres, 1), make(chan ares, 1)
+	go func() { ss, e := c.sessionList(); sch <- sres{ss, e} }()
+	go func() { o, e := c.run(4*time.Second, "api", "snapshot"); ach <- ares{o, e} }()
+	sr, ar := <-sch, <-ach
+	sessions, slErr := sr.ss, sr.err
+	out, err := ar.out, ar.err
 	if err != nil {
+		// Remoto que dejó de responder: en vez de blanquear, mostramos su último
+		// estado bueno reciente (marcado Stale). Sólo si el fallo parece de red
+		// (session list TAMBIÉN falló); si session list respondió, el server
+		// simplemente está parado y eso sí lo reportamos tal cual.
+		if c.target != "" && slErr != nil {
+			if last, ok := snapRecent(c.target, 12*time.Second); ok && last.Available {
+				last.Stale = true
+				last.Reason = "sin respuesta de «" + c.target + "» — reintentando (mostrando lo último)"
+				return last
+			}
+		}
 		st := empty()
 		st.Sessions = sessions
 		switch {
@@ -190,7 +242,55 @@ func (c Client) Snapshot() State {
 	st := c.parse(out)
 	st.Installed = true
 	st.Sessions = sessions
+	if c.target != "" {
+		snapRemember(c.target, st)
+	}
 	return st
+}
+
+// Probe es un chequeo barato del estado de un destino (para dots de conexión y
+// el botón "Probar"). Distingue tres casos que importan al onboarding: SSH no
+// conecta, SSH conecta pero herdr no está, y herdr responde (parado o corriendo).
+type Probe struct {
+	Reachable bool   `json:"reachable"` // herdr respondió por SSH
+	SSHOK     bool   `json:"ssh_ok"`    // la conexión SSH funciona
+	Running   bool   `json:"running"`   // el server de herdr corre
+	Message   string `json:"message"`
+}
+
+// Probe hace un chequeo ligero (una llamada; dos sólo si la primera falla).
+func (c Client) Probe() Probe {
+	ss, err := c.sessionList()
+	if err == nil {
+		p := Probe{Reachable: true, SSHOK: true}
+		for _, s := range ss {
+			if s.Running {
+				p.Running = true
+			}
+		}
+		if p.Running {
+			p.Message = "herdr corriendo"
+		} else {
+			p.Message = "herdr instalado, server parado — puedes activarlo"
+		}
+		return p
+	}
+	// herdr no respondió: ¿es SSH o es que falta herdr en el VPS?
+	if c.sshReachable() {
+		return Probe{SSHOK: true, Message: "conecté por SSH, pero herdr no respondió — ¿está instalado en el VPS?"}
+	}
+	return Probe{Message: "no pude conectar por SSH — revisa el host y que tu llave entre sin contraseña"}
+}
+
+// sshReachable prueba SOLO la conexión SSH (sin herdr): `ssh <target> true`.
+func (c Client) sshReachable() bool {
+	if c.target == "" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	args := append(sshBase(), c.target, "true")
+	return exec.CommandContext(ctx, "ssh", args...).Run() == nil
 }
 
 // sessionList lee `herdr session list --json`. Responde aunque el server esté
@@ -262,6 +362,34 @@ var (
 	progCache = map[string]progEntry{}
 )
 
+// Caché de snapshots REMOTOS para "stale-serve": si un VPS deja de responder un
+// instante (SSH lento, blip de red), seguimos mostrando su último estado bueno
+// (marcado Stale) en vez de parpadear a "desconectado". Sólo remoto — el local
+// es barato y siempre fresco.
+var (
+	snapMu    sync.Mutex
+	snapCache = map[string]State{}
+	snapAt    = map[string]time.Time{}
+)
+
+func snapRemember(target string, st State) {
+	snapMu.Lock()
+	snapCache[target] = st
+	snapAt[target] = time.Now()
+	snapMu.Unlock()
+}
+
+// snapRecent devuelve el último snapshot bueno del target si es < maxAge.
+func snapRecent(target string, maxAge time.Duration) (State, bool) {
+	snapMu.Lock()
+	defer snapMu.Unlock()
+	st, ok := snapCache[target]
+	if !ok || time.Since(snapAt[target]) > maxAge {
+		return State{}, false
+	}
+	return st, true
+}
+
 type progEntry struct {
 	prog string
 	at   time.Time
@@ -271,7 +399,14 @@ type progEntry struct {
 // agente detectado (status != unknown). Cache de 15 s por pane, en paralelo:
 // no infla el snapshot.
 func (c Client) enrichPrograms(panes []Pane) {
+	// en remoto cada detección es un SSH; el programa casi no cambia → caché
+	// larga (60s) para no inundar de round-trips. Local barato → 15s.
+	ttl := 15 * time.Second
+	if c.target != "" {
+		ttl = 60 * time.Second
+	}
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // cap de detecciones concurrentes (procesos ssh)
 	for i := range panes {
 		if panes[i].AgentStatus == "" || panes[i].AgentStatus == "unknown" {
 			continue
@@ -281,13 +416,15 @@ func (c Client) enrichPrograms(panes []Pane) {
 		progMu.Lock()
 		e, ok := progCache[ckey]
 		progMu.Unlock()
-		if ok && time.Since(e.at) < 15*time.Second {
+		if ok && time.Since(e.at) < ttl {
 			panes[i].Program = e.prog
 			continue
 		}
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			prog := c.detectProgram(id)
 			progMu.Lock()
 			progCache[ckey] = progEntry{prog, time.Now()}
@@ -296,6 +433,22 @@ func (c Client) enrichPrograms(panes []Pane) {
 		}(i)
 	}
 	wg.Wait()
+	pruneProgCache()
+}
+
+// pruneProgCache evita el crecimiento sin fin del caché: si se hace grande,
+// suelta las entradas más viejas que 2 min. Barato y sólo cuando hace falta.
+func pruneProgCache() {
+	progMu.Lock()
+	defer progMu.Unlock()
+	if len(progCache) < 256 {
+		return
+	}
+	for k, e := range progCache {
+		if time.Since(e.at) > 2*time.Minute {
+			delete(progCache, k)
+		}
+	}
 }
 
 var agentPrograms = []struct{ needle, label string }{
