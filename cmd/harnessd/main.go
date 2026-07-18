@@ -23,6 +23,7 @@ import (
 
 	"github.com/andresgarcia29/harness-daemon/internal/api"
 	"github.com/andresgarcia29/harness-daemon/internal/collect"
+	"github.com/andresgarcia29/harness-daemon/internal/config"
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/initflow"
@@ -94,9 +95,9 @@ func main() {
 	case "snapshot":
 		os.Exit(snapshotCmd(*ws))
 	case "status":
-		os.Exit(status(dport))
+		os.Exit(status(findDaemonPort(*port)))
 	case "stop":
-		os.Exit(stop(dport))
+		os.Exit(stop(findDaemonPort(*port)))
 	case "ui":
 		os.Exit(uiCmd(*port, *ws, *noOpen))
 	case "init":
@@ -109,6 +110,24 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+// findDaemonPort — dónde vive el daemon cuando no diste --port: primero el
+// puerto del panel (config → 7180, donde lo dejan `harness ui`/`init`), luego
+// el legacy 7718. Sin esto, `harness stop` apuntaba a 7718 mientras el wizard
+// corría en 7180 — y "lo paré" no paraba nada.
+func findDaemonPort(flagPort int) int {
+	if flagPort > 0 {
+		return flagPort
+	}
+	ui := config.ResolveUIPort(0)
+	if h, err := lock.Probe(ui); err == nil && h.Name == "harnessd" {
+		return ui
+	}
+	if h, err := lock.Probe(defaultPort); err == nil && h.Name == "harnessd" {
+		return defaultPort
+	}
+	return ui
 }
 
 func usage() {
