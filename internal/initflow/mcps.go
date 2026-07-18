@@ -390,6 +390,9 @@ func (m *Manager) handleProbeAll(map[string]any) (any, int) {
 	var skipped []string
 	var used map[string]bool
 	if m.isRemote() {
+		if err := m.ensureRemoteBinaryOnce("mcps"); err != nil {
+			return map[string]any{"ok": false, "error": err.Error()}, 502
+		}
 		out, err := m.remoteHarness("mcps",
 			[]string{"init-step", "probe-mcp", "--workspace", ws, "--all", "--json"}, nil, 5*time.Minute)
 		var res struct {
@@ -451,6 +454,9 @@ func (m *Manager) handleMcpSecretRemote(body map[string]any) (any, int) {
 	m.mu.Lock()
 	ws := m.st.Workspace
 	m.mu.Unlock()
+	if err := m.ensureRemoteBinaryOnce("mcps"); err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, 502
+	}
 	out, err := m.remoteHarness("mcps",
 		[]string{"init-step", "probe-mcp", "--workspace", ws, "--name", name, "--key", key, "--store", "--json"},
 		[]byte(value), 3*time.Minute)
@@ -497,6 +503,9 @@ func (m *Manager) handleProbeInit(body map[string]any) (any, int) {
 		name := str(body, "name")
 		if _, ok := gen.CapByName(name); !ok {
 			return map[string]any{"ok": false, "error": "MCP desconocido: " + name}, 400
+		}
+		if err := m.ensureRemoteBinaryOnce("mcps"); err != nil {
+			return map[string]any{"ok": false, "error": err.Error()}, 502
 		}
 		out, err := m.remoteHarness("mcps",
 			[]string{"init-step", "probe-mcp", "--workspace", ws, "--name", name, "--json"}, nil, 3*time.Minute)

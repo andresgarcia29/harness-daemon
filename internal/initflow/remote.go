@@ -77,6 +77,26 @@ func (m *Manager) remoteHarness(step string, args []string, stdin []byte, timeou
 	return m.remoteExec(step, append([]string{"harness"}, args...), stdin, timeout)
 }
 
+// ensureRemoteBinaryOnce — el sync UNA vez por vida del daemon (cache): las
+// ACCIONES remotas (sonda MCP, certificar secretos) también lo necesitan, no
+// solo los pasos — llamar al VPS con un binario viejo da 'exit status 2' con
+// el usage de flags que aún no existen (bug real del paso MCPs).
+func (m *Manager) ensureRemoteBinaryOnce(step string) error {
+	m.mu.Lock()
+	ok := m.remoteBinOK
+	m.mu.Unlock()
+	if ok {
+		return nil
+	}
+	if err := m.ensureRemoteBinary(step); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.remoteBinOK = true
+	m.mu.Unlock()
+	return nil
+}
+
 // ensureRemoteBinary verifica `harness` en el VPS y lo SINCRONIZA a la
 // versión local: local y remoto hablan un protocolo (progreso @@repo, shapes
 // JSON) — un binario viejo allá rompe features nuevas acá en silencio (fue
@@ -200,7 +220,7 @@ func (m *Manager) handleWorkspaceRemote(body map[string]any) (any, int) {
 	if dry {
 		return m.remoteProbeDir(path, boolv(body, "confirm_outside_home"))
 	}
-	if err := m.ensureRemoteBinary("workspace"); err != nil {
+	if err := m.ensureRemoteBinaryOnce("workspace"); err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}, 502
 	}
 	args := []string{"init-step", "workspace", "--path", path, "--json"}
