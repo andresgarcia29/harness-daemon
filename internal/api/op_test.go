@@ -283,12 +283,18 @@ func TestOpHerdrKeyFiltra(t *testing.T) {
 }
 
 func TestHerdrKeyOK(t *testing.T) {
-	for _, k := range []string{"0", "5", "9", "y", "n", "Enter", "Up", "Escape"} {
+	// Set suficiente para manejar un TUI de pantalla completa (picker de Claude
+	// Code, listas, editores): navegar, borrar, salir e interrumpir.
+	for _, k := range []string{
+		"0", "5", "9", "y", "n", "Enter", "Up", "Down", "Left", "Right",
+		"Tab", "Space", "Backspace", "Escape", "C-c",
+	} {
 		if !herdrKeyOK(k) {
 			t.Errorf("%q debería ser válida", k)
 		}
 	}
-	for _, k := range []string{"rm", "sudo", "10", ";", "a", "$(x)"} {
+	// Nada que pueda inyectar un comando de shell.
+	for _, k := range []string{"rm", "sudo", "10", ";", "a", "$(x)", "C-d", "C-z", "&& rm"} {
 		if herdrKeyOK(k) {
 			t.Errorf("%q NO debería pasar el filtro", k)
 		}
