@@ -527,6 +527,29 @@ func (c Client) SessionDelete(name string) error {
 	return err
 }
 
+// RemoteHarnessdSnapshot corre `harnessd snapshot` en un VPS por SSH y devuelve
+// el JSON crudo del snapshot completo (tareas, sesiones, costo…). Es cómo el
+// panel local trae los DATOS de una máquina remota, no sólo sus terminales.
+// wsPath = ruta del workspace del harness EN el VPS (quoteada, anti-inyección).
+func RemoteHarnessdSnapshot(target, wsPath string) ([]byte, error) {
+	if target == "" {
+		return nil, fmt.Errorf("destino vacío")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := remotePATH + "harnessd snapshot"
+	if wsPath != "" {
+		cmd += " --workspace " + shQuote(wsPath)
+	}
+	out, err := exec.CommandContext(ctx, "ssh", append(sshBase(), target, cmd)...).Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			return out, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
+	}
+	return out, err
+}
+
 // ServerStart arranca el server de herdr HEADLESS (sin TUI) y DESACOPLADO, tal
 // como el usuario quiere "activarlo por debajo". Local: Setsid (sobrevive al
 // daemon). Remoto: nohup en el VPS para que la sesión SSH regrese sin bloquear.

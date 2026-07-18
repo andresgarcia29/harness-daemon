@@ -639,7 +639,7 @@ func (o *Op) OpTargets(rw http.ResponseWriter, r *http.Request) {
 	}
 	switch s(b, "action") {
 	case "add":
-		if err := AddTarget(s(b, "name"), s(b, "ssh")); err != nil {
+		if err := AddTarget(s(b, "name"), s(b, "ssh"), s(b, "path")); err != nil {
 			fail(rw, 400, err.Error())
 			return
 		}

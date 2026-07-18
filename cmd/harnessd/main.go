@@ -6,6 +6,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -52,6 +53,8 @@ func main() {
 		os.Exit(ensure(*port, *ws))
 	case "run":
 		os.Exit(run(*port, *ws))
+	case "snapshot":
+		os.Exit(snapshotCmd(*ws))
 	case "status":
 		os.Exit(status(*port))
 	case "stop":
@@ -152,6 +155,85 @@ func ensure(port int, wsPath string) int {
 	return 1
 }
 
+// buildSnapshot arma el snapshot que sirve el panel según el target elegido:
+//   - LOCAL: lee la DB de esta máquina (api.Build) + herdr local + liveness.
+//   - REMOTO (un VPS): trae el snapshot COMPLETO del VPS por SSH
+//     (`harnessd snapshot`) + su herdr + liveness contra su herdr. Así el
+//     selector de máquina muta TODA la página (tareas, sesiones, costo), no sólo
+//     las terminales. Si el VPS no responde harnessd, muestra vacío + warning
+//     (las terminales sí siguen, van por otro canal).
+func buildSnapshot(r *http.Request, db *sql.DB, w ident.Workspace) *api.Snapshot {
+	tgt, ok := api.ResolveTargetFull(r.URL.Query().Get("target"))
+	if !ok {
+		tgt = api.Target{} // destino desconocido → local
+	}
+	if tgt.SSH != "" {
+		hs := herdr.Remote(tgt.SSH).Snapshot() // las terminales del VPS
+		var snap *api.Snapshot
+		if raw, err := herdr.RemoteHarnessdSnapshot(tgt.SSH, tgt.Path); err == nil {
+			var s api.Snapshot
+			if json.Unmarshal(raw, &s) == nil {
+				snap = &s
+			}
+		}
+		if snap == nil {
+			snap = api.EmptySnapshot()
+			snap.Warning = "no pude traer los datos de «" + tgt.Name + "» — ¿harnessd instalado y corriendo en el VPS? (sus terminales sí funcionan)"
+		}
+		api.EnrichLiveness(snap, hs)
+		snap.Herdr = hs
+		snap.Targets = api.LoadTargets()
+		snap.TS = time.Now().Unix()
+		return snap
+	}
+	// LOCAL
+	snap, err := api.Build(db, w.ID, w.Path, time.Now().Unix())
+	if err != nil {
+		snap = api.EmptySnapshot()
+		snap.Warning = "error leyendo el almacén local: " + err.Error()
+	}
+	localH := herdr.Local().Snapshot()
+	api.EnrichLiveness(snap, localH)
+	snap.Herdr = localH
+	snap.Targets = api.LoadTargets()
+	snap.Connections = api.Connections()
+	snap.Workspace.Name = w.Name
+	return snap
+}
+
+// snapshotCmd imprime el snapshot del workspace como JSON y termina. Es lo que
+// el daemon LOCAL corre por SSH en un VPS (`ssh vps harnessd snapshot --json`)
+// para que el selector de máquina mute TODA la página con datos del remoto.
+// Sólo lectura: abre la DB (que el daemon del VPS mantiene), Build, imprime.
+func snapshotCmd(wsPath string) int {
+	m, err := ident.ThisMachine()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		return 1
+	}
+	w, err := ident.ResolveWorkspace(wsPath, m.ID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		return 1
+	}
+	st, err := store.Open(filepath.Join(ident.ConfigDir(), "harness.db"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ almacén: %v\n", err)
+		return 1
+	}
+	defer st.Close()
+	snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		return 1
+	}
+	snap.Workspace.Name = w.Name
+	if err := json.NewEncoder(os.Stdout).Encode(snap); err != nil {
+		return 1
+	}
+	return 0
+}
+
 func run(port int, wsPath string) int {
 	started := time.Now()
 	m, err := ident.ThisMachine()
@@ -242,27 +324,9 @@ func run(port int, wsPath string) int {
 		if !api.GuardRead(rw, r) {
 			return
 		}
-		snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
 		rw.Header().Set("Content-Type", "application/json")
 		rw.Header().Set("Cache-Control", "no-store")
-		if err != nil {
-			rw.WriteHeader(500)
-			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
-			return
-		}
-		// liveness SIEMPRE con el herdr LOCAL (las sesiones/tareas son de esta
-		// máquina). El target sólo cambia qué herdr muestra Terminales.
-		localH := herdr.Local().Snapshot()
-		api.EnrichLiveness(snap, localH)
-		if ssh, _ := api.ResolveTarget(r.URL.Query().Get("target")); ssh != "" {
-			snap.Herdr = herdr.Remote(ssh).Snapshot()
-		} else {
-			snap.Herdr = localH
-		}
-		snap.Targets = api.LoadTargets()
-		snap.Connections = api.Connections()
-		snap.Workspace.Name = w.Name
-		_ = json.NewEncoder(rw).Encode(snap)
+		_ = json.NewEncoder(rw).Encode(buildSnapshot(r, st.DB, w))
 	})
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
 	// colector ya escribe cada 2 s; aquí re-emitimos el snapshot al mismo ritmo.
@@ -281,21 +345,7 @@ func run(port int, wsPath string) int {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		send := func() bool {
-			snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
-			if err != nil {
-				return true
-			}
-			localH := herdr.Local().Snapshot()
-			api.EnrichLiveness(snap, localH)
-			if ssh, _ := api.ResolveTarget(r.URL.Query().Get("target")); ssh != "" {
-				snap.Herdr = herdr.Remote(ssh).Snapshot()
-			} else {
-				snap.Herdr = localH
-			}
-			snap.Targets = api.LoadTargets()
-			snap.Connections = api.Connections()
-			snap.Workspace.Name = w.Name
-			b, _ := json.Marshal(snap)
+			b, _ := json.Marshal(buildSnapshot(r, st.DB, w))
 			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
 				return false
 			}
