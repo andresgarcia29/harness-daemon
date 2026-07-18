@@ -161,6 +161,9 @@ func (o *Op) launch(args []string, logname string) (int, error) {
 }
 
 func (o *Op) emit(kind, summary, task string) {
+	if o.WS == "" {
+		return // modo setup (ADR-0011): aún no hay workspace ni bus donde emitir
+	}
 	_ = os.MkdirAll(filepath.Join(o.WS, ".harness"), 0o755)
 	f, err := os.OpenFile(filepath.Join(o.WS, ".harness", "events.jsonl"),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
