@@ -144,15 +144,23 @@ func shJoin(args []string) string {
 	return strings.Join(parts, " ")
 }
 
+// remotePATH antepone las ubicaciones comunes de instalación al PATH remoto.
+// `ssh host cmd` corre en un shell NO-interactivo con un PATH mínimo
+// (/usr/bin:/bin) que casi nunca incluye donde vive herdr (Homebrew, ~/.local/
+// bin…): por eso `ssh host herdr` falla aunque interactivamente sí lo halles.
+// $HOME y $PATH los expande el shell remoto; el resto es literal y seguro.
+const remotePATH = `PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/snap/bin:$PATH" `
+
 // run ejecuta un subcomando de herdr en el destino del Client. Local = exec
-// directo (args como argv, sin shell). Remoto = ssh con el comando ya quoteado.
+// directo (args como argv, sin shell). Remoto = ssh con el comando ya quoteado
+// y el PATH aumentado.
 func (c Client) run(timeout time.Duration, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if c.target == "" {
 		return exec.CommandContext(ctx, "herdr", args...).Output()
 	}
-	remote := "herdr " + shJoin(args)
+	remote := remotePATH + "herdr " + shJoin(args)
 	sshArgs := append(sshBase(), c.target, remote)
 	out, err := exec.CommandContext(ctx, "ssh", sshArgs...).Output()
 	if err != nil {
@@ -518,7 +526,7 @@ func (c Client) ServerStart() error {
 		// remoto: arrancar detached en el VPS; ssh regresa de inmediato.
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
-		remote := "nohup herdr server </dev/null >/dev/null 2>&1 &"
+		remote := remotePATH + "nohup herdr server </dev/null >/dev/null 2>&1 &"
 		args := append(sshBase(), c.target, remote)
 		return exec.CommandContext(ctx, "ssh", args...).Run()
 	}
