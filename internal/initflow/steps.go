@@ -5,7 +5,9 @@ package initflow
 // case; el dispatcher trata nil como "no implementado" con un error honesto.
 func (m *Manager) runnerFor(id string) runner {
 	switch id {
-	// F4: "github", "clone" · F5: "requirements" · F6: "discover", "enrich"
+	case "clone":
+		return (*Manager).runClone
+	// F5: "requirements" · F6: "discover", "enrich"
 	// F7/F8: "generate", "archaeology" · F9: "mcps" · F10: "first-task", "finish"
 	default:
 		return nil

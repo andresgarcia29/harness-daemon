@@ -37,6 +37,11 @@ var Version = "dev"
 const defaultPort = 7718
 
 func main() {
+	// Modo askpass por env: GIT_ASKPASS invoca el binario con el prompt como
+	// único argumento (sin subcomando posible). Ver askpass.go.
+	if os.Getenv("HARNESS_ASKPASS") == "1" {
+		os.Exit(askpassCmd(os.Args[1:]))
+	}
 	args := os.Args[1:]
 	if len(args) < 1 {
 		usage()
@@ -87,6 +92,8 @@ func main() {
 		os.Exit(initCmd(*port, *noOpen))
 	case "config":
 		os.Exit(configCmd(fs.Args()))
+	case "askpass":
+		os.Exit(askpassCmd(fs.Args()))
 	default:
 		usage()
 		os.Exit(2)

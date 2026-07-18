@@ -41,7 +41,24 @@ type State struct {
 	Target         string      `json:"target,omitempty"` // "" = esta máquina; nombre de target = VPS (F11)
 	Current        string      `json:"current"`
 	Steps          []StepState `json:"steps"`
+	GitHub         *GHState    `json:"github,omitempty"`
+	Repos          []RepoSel   `json:"repos,omitempty"`
 	CompletedAt    int64       `json:"completed_at,omitempty"`
+}
+
+// GHState — cómo hablamos con GitHub. El token JAMÁS vive aquí: pat → archivo
+// 0600 en ConfigDir; gh → se le pide vivo a `gh auth token`.
+type GHState struct {
+	Mode string `json:"mode"` // gh | pat
+	User string `json:"user"`
+}
+
+// RepoSel — un repo elegido para clonar (con ref opcional pineada).
+type RepoSel struct {
+	FullName string `json:"full_name"`
+	Ref      string `json:"ref,omitempty"`
+	Status   Status `json:"status"`
+	Error    string `json:"error,omitempty"`
 }
 
 const schemaVersion = 1
@@ -92,6 +109,8 @@ type PublicState struct {
 	Steps         []StepState `json:"steps"`
 	WorkspacePath string      `json:"workspace_path,omitempty"`
 	Target        string      `json:"target,omitempty"`
+	GitHub        *GHState    `json:"github,omitempty"`
+	Repos         []RepoSel   `json:"repos,omitempty"`
 	CompletedAt   int64       `json:"completed_at,omitempty"`
 }
 
