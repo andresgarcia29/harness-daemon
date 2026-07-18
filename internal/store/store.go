@@ -147,6 +147,16 @@ func (s *Store) UpsertSession(id, machineID, workspaceID, cli string, started, n
 	return err
 }
 
+// SetSessionCwd fija el cwd de una sesión (del transcript). Se escribe UNA vez
+// (WHERE cwd=''): el directorio de una sesión no cambia. Vacío = no-op.
+func (s *Store) SetSessionCwd(id, cwd string) error {
+	if cwd == "" {
+		return nil
+	}
+	_, err := s.DB.Exec(`UPDATE sessions SET cwd=? WHERE id=? AND cwd=''`, cwd, id)
+	return err
+}
+
 func (s *Store) UpsertAgent(sessionID, agentID, parent, typ, desc string, depth int, started, now int64) error {
 	var parentVal any
 	if parent != "" {

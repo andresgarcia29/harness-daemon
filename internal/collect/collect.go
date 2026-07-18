@@ -16,6 +16,7 @@
 package collect
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -37,10 +38,11 @@ type Collector struct {
 	Workspace  ident.Workspace
 	projectDir string // transcripts de Claude Code para este workspace ("" = aún no hallado)
 	offsets    map[string]int64
+	cwdDone    map[string]bool // sesiones cuyo cwd ya guardamos (se lee una vez)
 }
 
 func New(st *store.Store, m ident.Machine, w ident.Workspace) *Collector {
-	return &Collector{St: st, Machine: m, Workspace: w, offsets: map[string]int64{}}
+	return &Collector{St: st, Machine: m, Workspace: w, offsets: map[string]int64{}, cwdDone: map[string]bool{}}
 }
 
 // Tick corre una pasada completa de ingesta. Idempotente por construcción:
@@ -202,19 +204,27 @@ func findProjectDir(workspace string) string {
 	return ""
 }
 
+// firstCwd devuelve el primer `cwd` que aparece en el transcript. NO basta con
+// la primera línea: Claude Code arranca con records `queue-operation` sin cwd;
+// el cwd sale unas líneas después (en `attachment`/mensajes). Escaneamos las
+// primeras ~60 líneas y paramos al primero — barato y robusto.
 func firstCwd(path string) string {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
-	if i := strings.IndexByte(string(b), '\n'); i > 0 {
-		b = b[:i]
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // records grandes (adjuntos)
+	for i := 0; sc.Scan() && i < 60; i++ {
+		var rec struct {
+			Cwd string `json:"cwd"`
+		}
+		if json.Unmarshal(sc.Bytes(), &rec) == nil && rec.Cwd != "" {
+			return rec.Cwd
+		}
 	}
-	var rec struct {
-		Cwd string `json:"cwd"`
-	}
-	_ = json.Unmarshal(b, &rec)
-	return rec.Cwd
+	return ""
 }
 
 func (c *Collector) scanTranscripts(now int64) {
@@ -234,6 +244,14 @@ func (c *Collector) scanTranscripts(now int64) {
 		sid := strings.TrimSuffix(filepath.Base(f), ".jsonl")
 		_ = c.St.UpsertSession(sid, c.Machine.ID, c.Workspace.ID, "claude-code",
 			mtime(f), mtime(f))
+		// cwd de la sesión (una vez): ancla para cruzarla con las terminales de
+		// herdr y saber si de verdad corre — sin adivinar por mtime.
+		if !c.cwdDone[sid] {
+			if cw := firstCwd(f); cw != "" {
+				_ = c.St.SetSessionCwd(sid, cw)
+				c.cwdDone[sid] = true // sólo al lograrlo: reintenta si aún no hay cwd
+			}
+		}
 		_ = c.St.UpsertAgent(sid, "main", "", "orquestador", "", 0, mtime(f), mtime(f))
 		c.tail(f, func(line []byte, off int64) { c.ingest(line, sid, "main", off) })
 

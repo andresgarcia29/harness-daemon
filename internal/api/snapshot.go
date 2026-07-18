@@ -46,6 +46,12 @@ type session struct {
 	Tokens  tokens   `json:"tokens"`
 	Cost    *float64 `json:"cost"`
 	Agents  []agent  `json:"agents"`
+	// LiveBy dice CÓMO sabemos que está viva: "herdr" = una terminal de herdr la
+	// corre AHORA (verdad de campo); "recent" = el transcript se tocó hace poco
+	// pero herdr no lo confirma (terminó hace nada o corre fuera de herdr);
+	// "" = en reposo. Lo llena EnrichLiveness. El mtime ya no miente "trabajando".
+	LiveBy string `json:"live_by"`
+	Cwd    string `json:"-"` // interno: para cruzar con pane.cwd de herdr
 }
 type tokens struct {
 	Out   int64 `json:"out"`
@@ -231,18 +237,20 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 	rows.Close()
 
 	// ── sesiones + agentes ──
-	sr, err := db.Query(`SELECT id, last_seen FROM sessions WHERE workspace_id = ? ORDER BY last_seen DESC`, workspaceID)
+	sr, err := db.Query(`SELECT id, last_seen, cwd FROM sessions WHERE workspace_id = ? ORDER BY last_seen DESC`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	var sessIDs []string
 	sessLast := map[string]int64{}
+	sessCwd := map[string]string{}
 	for sr.Next() {
-		var id string
+		var id, cwd string
 		var last int64
-		if sr.Scan(&id, &last) == nil {
+		if sr.Scan(&id, &last, &cwd) == nil {
 			sessIDs = append(sessIDs, id)
 			sessLast[id] = last
+			sessCwd[id] = cwd
 		}
 	}
 	sr.Close()
@@ -322,6 +330,7 @@ func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error)
 			ID: sid, Short: short(sid), Model: mainModel, NAgents: len(agents),
 			NActive: nActive, Peak: peakConcurrency(intervals), Idle: now - sessLast[sid],
 			Tokens: tokens{Out: sOut, CRead: sCRead}, Cost: scost, Agents: agents,
+			Cwd: sessCwd[sid],
 		})
 	}
 

@@ -247,7 +247,9 @@ func run(port int, wsPath string) int {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		snap.Herdr = herdr.Snapshot()
+		hs := herdr.Snapshot()
+		api.EnrichLiveness(snap, hs) // liveness honesta: herdr manda sobre el mtime
+		snap.Herdr = hs
 		snap.Connections = api.Connections()
 		snap.Workspace.Name = w.Name
 		_ = json.NewEncoder(rw).Encode(snap)
@@ -270,7 +272,9 @@ func run(port int, wsPath string) int {
 			if err != nil {
 				return true
 			}
-			snap.Herdr = herdr.Snapshot()
+			hs := herdr.Snapshot()
+			api.EnrichLiveness(snap, hs) // liveness honesta: herdr manda sobre el mtime
+			snap.Herdr = hs
 			snap.Connections = api.Connections()
 			snap.Workspace.Name = w.Name
 			b, _ := json.Marshal(snap)
