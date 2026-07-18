@@ -367,7 +367,7 @@ func run(port int, wsPath string) int {
 		}
 		rw.Header().Set("Content-Type", "application/json")
 		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
-		txt, err := herdr.Remote(ssh).PaneRead(r.URL.Query().Get("id"), 60, r.URL.Query().Get("fmt"))
+		txt, err := herdr.Remote(ssh).PaneRead(r.URL.Query().Get("id"), 200, r.URL.Query().Get("fmt"))
 		if err != nil {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no pude leer el pane"})
 			return
