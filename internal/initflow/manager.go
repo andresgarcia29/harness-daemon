@@ -20,7 +20,14 @@ type Manager struct {
 	logs    *LogBuffer
 	version string
 	running bool // a lo sumo un paso corriendo
+
+	// resolveTarget valida el NOMBRE de un target SSH (main lo inyecta con
+	// api.ResolveTarget para no crear ciclo de imports). nil = sin targets.
+	resolveTarget func(name string) (string, bool)
 }
+
+// SetTargetResolver inyecta el validador de targets (api.ResolveTarget).
+func (m *Manager) SetTargetResolver(f func(string) (string, bool)) { m.resolveTarget = f }
 
 // New crea el manager en modo setup. Si hay un init a medias (de un arranque
 // anterior), lo carga y re-adopta su workspace: reanudar es el caso normal,
@@ -168,11 +175,62 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 	switch action {
 	case "workspace":
 		return m.handleWorkspace(body)
+	case "browse":
+		return m.handleBrowse(body)
+	case "target":
+		return m.handleTarget(body)
 	case "step":
 		return m.handleStep(body)
 	default:
 		return map[string]any{"ok": false, "error": "acción desconocida: " + action}, 400
 	}
+}
+
+// handleBrowse: mini file-browser del paso 1. SOLO directorios, SOLO bajo el
+// home (el navegador no tiene por qué ver más), symlinks sin seguir, ocultos
+// fuera. La UI no implementa seguridad — la respeta.
+func (m *Manager) handleBrowse(body map[string]any) (any, int) {
+	p := str(body, "path")
+	home, _ := os.UserHomeDir()
+	if p == "" {
+		p = home
+	}
+	norm, err := normalizeWS(p, false)
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, 400
+	}
+	entries, err := os.ReadDir(norm)
+	if err != nil {
+		return map[string]any{"ok": false, "error": "no pude leer la carpeta: " + err.Error()}, 400
+	}
+	dirs := []string{}
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	parent := filepath.Dir(norm)
+	if norm == home {
+		parent = "" // el techo del browse es el home
+	}
+	return map[string]any{"ok": true, "path": norm, "parent": parent, "dirs": dirs}, 200
+}
+
+// handleTarget: dónde se crea el harness — "" (esta máquina) o el NOMBRE de
+// un target SSH de targets.json (la instalación remota corre los pasos allá,
+// F11). El navegador manda el nombre, jamás el SSH: anti-inyección de targets.go.
+func (m *Manager) handleTarget(body map[string]any) (any, int) {
+	name := str(body, "name")
+	if name != "" && m.resolveTarget != nil {
+		if _, ok := m.resolveTarget(name); !ok {
+			return map[string]any{"ok": false, "error": "target desconocido: " + name}, 400
+		}
+	}
+	m.mu.Lock()
+	m.st.Target = name
+	m.persistLocked()
+	m.mu.Unlock()
+	return map[string]any{"ok": true, "target": name}, 200
 }
 
 func str(b map[string]any, k string) string {
