@@ -1,0 +1,27 @@
+# CI del daemon: vet + tests + el check de la cadena de suministro interna
+# (sync-assets --check: un PR con assets embebidos viejos es ROJO, no un
+# release con templates viejos en silencio).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: checkout harness-installer (privado — fuente de los assets)
+        uses: actions/checkout@v4
+        with:
+          repository: andresgarcia29/harness-creator
+          token: ${{ secrets.INSTALLER_TOKEN }}
+          path: harness-installer
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: drift de assets embebidos
+        run: ./scripts/sync-assets.sh --check ./harness-installer
+      - name: vet + tests
+        run: go vet ./... && go test ./...
