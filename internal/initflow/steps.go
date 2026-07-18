@@ -19,7 +19,10 @@ func (m *Manager) runnerFor(id string) runner {
 		return (*Manager).runArchaeology
 	case "mcps":
 		return (*Manager).runMcps
-	// F10: "first-task", "finish"
+	case "first-task":
+		return (*Manager).runFirstTask
+	case "finish":
+		return (*Manager).runFinish
 	default:
 		return nil
 	}
