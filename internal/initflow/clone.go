@@ -14,6 +14,48 @@ import (
 // Idempotente por ARTEFACTO: un repo ya clonado con el remote correcto se
 // salta; matar el daemon a mitad de clone y reintentar retoma repo a repo.
 // El token jamás toca argv: git nos re-invoca como GIT_ASKPASS (askpass.go).
+//
+// El núcleo (CloneRepos) es standalone: lo usa el Manager (local) y el
+// subcomando `harness init-step clone` (el MISMO código corriendo en un VPS
+// vía ssh — ADR-0011 §4).
+
+// CloneRepos clona la selección. log recibe el progreso humano; onStatus el
+// estado por repo (índice de sel). Devuelve cuántos fallaron.
+func CloneRepos(ws, mode string, sel []RepoSel, log func(string), onStatus func(i int, s Status, errMsg string)) (int, error) {
+	if len(sel) == 0 {
+		return 0, errors.New("no hay repos seleccionados — elige al menos uno")
+	}
+	if mode == "" {
+		return 0, errors.New("GitHub no configurado — completa el paso 2")
+	}
+	selfExe, err := os.Executable()
+	if err != nil {
+		return 0, err
+	}
+	fails := 0
+	for i, r := range sel {
+		dest := filepath.Join(ws, "repos", filepath.Base(r.FullName))
+		if cloneVerified(dest, r.FullName) {
+			onStatus(i, OK, "")
+			log(r.FullName + " ya clonado — verificado, se salta")
+			continue
+		}
+		onStatus(i, Running, "")
+		log("clonando " + r.FullName + "…")
+		if err := cloneOne(selfExe, mode, r, dest, log); err != nil {
+			fails++
+			onStatus(i, Fail, err.Error())
+			log("❌ " + r.FullName + ": " + err.Error())
+			continue
+		}
+		onStatus(i, OK, "")
+		log("✓ " + r.FullName)
+	}
+	if fails > 0 {
+		return fails, fmt.Errorf("%d repo(s) fallaron — reintenta (los clonados no se repiten)", fails)
+	}
+	return 0, nil
+}
 
 func (m *Manager) runClone() error {
 	m.mu.Lock()
@@ -24,42 +66,16 @@ func (m *Manager) runClone() error {
 		mode = m.st.GitHub.Mode
 	}
 	m.mu.Unlock()
-	if len(sel) == 0 {
-		return errors.New("no hay repos seleccionados — elige al menos uno")
+	if m.isRemote() {
+		return m.remoteClone(ws, mode, sel)
 	}
-	if mode == "" {
-		return errors.New("GitHub no configurado — completa el paso 2")
-	}
-	selfExe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	fails := 0
-	for i, r := range sel {
-		dest := filepath.Join(ws, "repos", filepath.Base(r.FullName))
-		if cloneVerified(dest, r.FullName) {
-			m.setRepoStatus(i, OK, "")
-			m.logs.Append("clone", r.FullName+" ya clonado — verificado, se salta")
-			continue
-		}
-		m.setRepoStatus(i, Running, "")
-		m.logs.Append("clone", "clonando "+r.FullName+"…")
-		if err := m.gitClone(selfExe, mode, r, dest); err != nil {
-			fails++
-			m.setRepoStatus(i, Fail, err.Error())
-			m.logs.Append("clone", "❌ "+r.FullName+": "+err.Error())
-			continue
-		}
-		m.setRepoStatus(i, OK, "")
-		m.logs.Append("clone", "✓ "+r.FullName)
-	}
-	if fails > 0 {
-		return fmt.Errorf("%d repo(s) fallaron — reintenta (los clonados no se repiten)", fails)
-	}
-	return nil
+	_, err := CloneRepos(ws, mode, sel,
+		func(s string) { m.logs.Append("clone", s) },
+		func(i int, s Status, e string) { m.setRepoStatus(i, s, e) })
+	return err
 }
 
-func (m *Manager) gitClone(selfExe, mode string, r RepoSel, dest string) error {
+func cloneOne(selfExe, mode string, r RepoSel, dest string, log func(string)) error {
 	_ = os.RemoveAll(dest + ".partial")
 	url := "https://github.com/" + r.FullName + ".git"
 	args := []string{"clone", "--progress", "--filter=blob:none", url, dest}
@@ -85,7 +101,7 @@ func (m *Manager) gitClone(selfExe, mode string, r RepoSel, dest string) error {
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line != "" && line != last {
-			m.logs.Append("clone", line)
+			log(line)
 			last = line
 		}
 	}
@@ -98,7 +114,7 @@ func (m *Manager) gitClone(selfExe, mode string, r RepoSel, dest string) error {
 		if err != nil {
 			return fmt.Errorf("checkout %s: %s", r.Ref, strings.TrimSpace(string(out)))
 		}
-		m.logs.Append("clone", r.FullName+" @ "+r.Ref)
+		log(r.FullName + " @ " + r.Ref)
 	}
 	return nil
 }

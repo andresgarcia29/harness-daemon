@@ -80,11 +80,18 @@ func checkReq(d reqDef) ReqState {
 	return r
 }
 
-func (m *Manager) refreshRequirements() []ReqState {
+// CheckBaseline — el check standalone (lo usa el Manager local y
+// `harness init-step requirements` corriendo en un VPS).
+func CheckBaseline() []ReqState {
 	out := make([]ReqState, 0, len(baseline))
 	for _, d := range baseline {
 		out = append(out, checkReq(d))
 	}
+	return out
+}
+
+func (m *Manager) refreshRequirements() []ReqState {
+	out := CheckBaseline()
 	m.mu.Lock()
 	m.st.Requirements = out
 	m.persistLocked()
@@ -94,6 +101,9 @@ func (m *Manager) refreshRequirements() []ReqState {
 
 // runRequirements — el runner del paso: verde solo si TODO lo requerido está.
 func (m *Manager) runRequirements() error {
+	if m.isRemote() {
+		return m.remoteRequirements()
+	}
 	reqs := m.refreshRequirements()
 	var missing []string
 	for _, r := range reqs {
@@ -121,6 +131,20 @@ func reqLine(r ReqState) string {
 
 // handleRequirementsCheck: re-verifica y devuelve (para la checklist viva).
 func (m *Manager) handleRequirementsCheck(map[string]any) (any, int) {
+	if m.isRemote() {
+		// en remoto el check vive en el runner (paso 4); la checklist viva
+		// del snapshot se refresca al correrlo
+		if err := m.remoteRequirements(); err != nil {
+			m.mu.Lock()
+			reqs := append([]ReqState(nil), m.st.Requirements...)
+			m.mu.Unlock()
+			return map[string]any{"ok": true, "requirements": reqs, "note": err.Error()}, 200
+		}
+		m.mu.Lock()
+		reqs := append([]ReqState(nil), m.st.Requirements...)
+		m.mu.Unlock()
+		return map[string]any{"ok": true, "requirements": reqs}, 200
+	}
 	return map[string]any{"ok": true, "requirements": m.refreshRequirements()}, 200
 }
 
@@ -128,6 +152,10 @@ func (m *Manager) handleRequirementsCheck(map[string]any) (any, int) {
 // sale de nuestro spec, jamás del navegador. Solo auto-run (brew/darwin);
 // lo demás vuelve como instrucción con needs_sudo.
 func (m *Manager) handleInstall(body map[string]any) (any, int) {
+	if m.isRemote() {
+		return map[string]any{"ok": false, "manual": true,
+			"error": "en instalación remota las dependencias se instalan en el VPS a mano (sudo)"}, 200
+	}
 	name := str(body, "name")
 	var def *reqDef
 	for i := range baseline {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,10 +37,21 @@ func generateCmd(args []string) int {
 	if ap == "" {
 		ap = filepath.Join(abs, "harness-answers.yaml")
 	}
-	raw, err := os.ReadFile(ap)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ no pude leer answers en %s — pasa --answers o corre el wizard (harness init)\n", ap)
-		return 1
+	var raw []byte
+	if ap == "-" { // answers por stdin (el camino remoto: jamás en argv ni en disco intermedio)
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil || len(b) == 0 {
+			fmt.Fprintln(os.Stderr, "❌ --answers -: no llegó nada por stdin")
+			return 1
+		}
+		raw = b
+	} else {
+		b, err := os.ReadFile(ap)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ no pude leer answers en %s — pasa --answers o corre el wizard (harness init)\n", ap)
+			return 1
+		}
+		raw = b
 	}
 	var a *gen.Answers
 	if strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {

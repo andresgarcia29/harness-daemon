@@ -145,6 +145,10 @@ func (m *Manager) handleCapability(body map[string]any) (any, int) {
 // <ws>/.secrets (0600); con otras fuentes solo se registra la referencia
 // (el valor lo materializa secrets.sh desde tu fuente).
 func (m *Manager) handleMcpSecret(body map[string]any) (any, int) {
+	if m.isRemote() {
+		return map[string]any{"ok": false,
+			"error": "en instalación remota los secretos se certifican en el VPS (make init) — aquí no hay MCP que sondear"}, 400
+	}
 	name, key, value := str(body, "name"), str(body, "key"), str(body, "value")
 	cap, ok := gen.CapByName(name)
 	if !ok || cap.Config == nil {
@@ -230,6 +234,9 @@ func (m *Manager) handleMcpSecret(body map[string]any) (any, int) {
 
 // handleProbeInit — sondar un MCP sin secreto (los que no lo necesitan).
 func (m *Manager) handleProbeInit(body map[string]any) (any, int) {
+	if m.isRemote() {
+		return map[string]any{"ok": false, "error": "la sonda MCP corre donde vive el harness — en remoto, desde el VPS"}, 400
+	}
 	name := str(body, "name")
 	cap, ok := gen.CapByName(name)
 	if !ok || cap.Config == nil {
@@ -269,8 +276,21 @@ func (m *Manager) runMcps() error {
 		probes[name] = p.Tools
 	}
 	m.mu.Unlock()
-	if a == nil || inv == nil {
-		return fmt.Errorf("configuración incompleta — corre discover/generate primero")
+	if a == nil {
+		return fmt.Errorf("configuración incompleta — corre discover primero")
+	}
+	if m.isRemote() {
+		// materializa la selección re-generando en el VPS (idempotente);
+		// la certificación de secretos y el deny de tools se hacen ALLÁ
+		// (make init + re-sonda) — aquí no hay MCP que sondear.
+		if err := m.remoteGenerate(ws, a); err != nil {
+			return err
+		}
+		m.logs.Append("mcps", "selección materializada en el VPS — certifica los secretos allá con make init")
+		return nil
+	}
+	if inv == nil {
+		return fmt.Errorf("configuración incompleta — corre el discover primero")
 	}
 	rep, err := gen.Generate(a, inv, gen.Opts{WS: ws, Version: m.version, Now: time.Now()})
 	if err != nil {

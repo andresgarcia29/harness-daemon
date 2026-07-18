@@ -16,7 +16,14 @@ import (
 
 func tokenPath() string { return filepath.Join(ident.ConfigDir(), "github-token") }
 
+// indirección para tests (apiStub ya cubre vía ghapi.APIBase; esto permite
+// stubear también el flujo remoto sin red)
+var validatePATFn = ghapi.ValidatePAT
+
 func (m *Manager) handleGithub(body map[string]any) (any, int) {
+	if m.isRemote() {
+		return m.handleGithubRemote(body)
+	}
 	switch str(body, "mode") {
 	case "gh":
 		_, user, err := ghapi.Detect()

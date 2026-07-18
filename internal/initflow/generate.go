@@ -19,11 +19,14 @@ func (m *Manager) runGenerate() error {
 	if a == nil {
 		return errors.New("no hay configuración — completa la entrevista del paso anterior")
 	}
-	if inv == nil {
-		return errors.New("no hay inventario — corre el auto-discover")
-	}
 	if err := a.Validate(); err != nil {
 		return err
+	}
+	if m.isRemote() {
+		return m.remoteGenerate(ws, a) // el inventory vive en el VPS
+	}
+	if inv == nil {
+		return errors.New("no hay inventario — corre el auto-discover")
 	}
 	m.logs.Append("generate", "generando el harness (determinista, cero tokens)…")
 	rep, err := gen.Generate(a, inv, gen.Opts{WS: ws, Version: m.version, Now: time.Now()})
