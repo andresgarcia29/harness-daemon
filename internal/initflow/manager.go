@@ -549,7 +549,16 @@ func (m *Manager) handleStep(body map[string]any) (any, int) {
 		m.persistLocked()
 		m.mu.Unlock()
 		go func() {
-			err := r(m)
+			var err error
+			// pasos remotos: el binario del VPS se sincroniza a la versión
+			// local ANTES de correr — protocolo parejo o nada (enrich corre
+			// local y no lo necesita)
+			if m.isRemote() && id != "enrich" && id != "workspace" {
+				err = m.ensureRemoteBinary(id)
+			}
+			if err == nil {
+				err = r(m)
+			}
 			m.mu.Lock()
 			m.running = false
 			if i := m.stepIdx(id); i >= 0 {

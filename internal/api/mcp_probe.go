@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -119,7 +120,20 @@ func probeMcpServer(ws string, sv mcpConf) McpProbe {
 	if !filepath.IsAbs(cmd) && strings.Contains(cmd, "/") {
 		cmd = filepath.Join(ws, cmd) // with-secrets.sh y relativos, respecto al ws
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	// transporte ausente = error CLARO, no un timeout críptico
+	if !strings.Contains(cmd, "/") {
+		if _, err := exec.LookPath(cmd); err != nil {
+			p.Error = "no encuentro «" + cmd + "» en PATH — el transporte de este MCP; instálalo (o elige la variante local)"
+			p.Ms = ms(start)
+			return p
+		}
+	}
+	// docker puede estar BAJANDO la imagen la primera vez: más aire
+	timeout := 12 * time.Second
+	if filepath.Base(cmd) == "docker" {
+		timeout = 60 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	c := exec.CommandContext(ctx, cmd, sv.Args...)
 	c.Dir = ws
@@ -167,7 +181,7 @@ func probeMcpServer(ws string, sv mcpConf) McpProbe {
 	if !p.OK {
 		se := strings.ToLower(errbuf.String())
 		if ctx.Err() != nil && p.Error == "" {
-			p.Error = "no contestó en 12s (npx/uvx/docker pueden tardar la 1ª vez — reintenta)"
+			p.Error = fmt.Sprintf("no contestó en %s (npx/uvx/docker bajan cosas la 1ª vez — reintenta en un momento)", timeout)
 		}
 		if p.Error == "" {
 			tail := errbuf.String()

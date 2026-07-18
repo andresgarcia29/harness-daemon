@@ -1,12 +1,15 @@
 package initflow
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +20,11 @@ import (
 // El LLM propone, el humano dispone: nada de lo que salga de aquí se aplica
 // sin pasar por el borrador editable. Sin claude o con salida rota, el wizard
 // sigue con los defaults deterministas (degrada, no explota).
+//
+// TRANSPARENCIA (la queja real del primer usuario: "parece que no hace
+// nada"): el runner corre con --output-format stream-json y narra en la
+// bitácora QUÉ está pasando — el comando exacto, el modelo, cada herramienta
+// que usa, el texto que va escribiendo, y un latido con el tiempo cada 15s.
 
 type llmRunner struct {
 	Bin     string
@@ -32,10 +40,17 @@ func newLLM(dir string) *llmRunner {
 	return &llmRunner{Bin: bin, Timeout: 5 * time.Minute, Dir: dir}
 }
 
-// runJSON corre `claude -p <prompt> --output-format json`, extrae el campo
-// .result y parsea el JSON que el prompt exigió. 1 retry. Tolerante al shape:
-// si .result no existe usa el stdout crudo; si el texto trae fences o prosa
-// alrededor, extrae el primer bloque {...} balanceado.
+func clip(s string, n int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
+
+// runJSON corre el prompt y parsea el JSON del contrato. 1 retry. Tolerante
+// al shape del CLI: stream-json si lo hay; envelope {"result": …} o texto
+// crudo como fallback (los stubs de test y CLIs viejos).
 func (r *llmRunner) runJSON(prompt string, out any, log func(string)) error {
 	path, err := exec.LookPath(r.Bin)
 	if err != nil {
@@ -44,19 +59,13 @@ func (r *llmRunner) runJSON(prompt string, out any, log func(string)) error {
 	var lastErr error
 	for attempt := 1; attempt <= 2; attempt++ {
 		if attempt > 1 {
-			log("reintento del paso LLM (la salida no parseó)")
+			log("segundo intento — la salida anterior no parseó")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
-		cmd := exec.CommandContext(ctx, path, "-p", prompt, "--output-format", "json")
-		cmd.Dir = r.Dir
-		cmd.Stdin = nil
-		raw, err := cmd.Output()
-		cancel()
+		text, err := r.stream(path, prompt, log)
 		if err != nil {
-			lastErr = fmt.Errorf("claude -p falló: %v", err)
+			lastErr = err
 			continue
 		}
-		text := extractResult(raw)
 		blob := extractJSONBlock(text)
 		if blob == "" {
 			lastErr = errors.New("la salida del LLM no trae JSON")
@@ -71,14 +80,125 @@ func (r *llmRunner) runJSON(prompt string, out any, log func(string)) error {
 	return lastErr
 }
 
+// stream ejecuta claude narrando el progreso a la bitácora.
+func (r *llmRunner) stream(path, prompt string, log func(string)) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
+	defer cancel()
+	log(fmt.Sprintf("$ %s -p «prompt %dKB» --output-format stream-json · timeout %s · cwd %s",
+		filepath.Base(path), (len(prompt)+1023)/1024, r.Timeout, defaultStr2(r.Dir, "(daemon)")))
+	cmd := exec.CommandContext(ctx, path, "-p", prompt, "--output-format", "stream-json", "--verbose")
+	cmd.Dir = r.Dir
+	cmd.Stdin = nil
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	// latido: aunque el modelo esté callado, el humano ve que hay pulso
+	hbDone := make(chan struct{})
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbDone:
+				return
+			case <-t.C:
+				log(fmt.Sprintf("⏳ el modelo sigue trabajando · %ds", int(time.Since(start).Seconds())))
+			}
+		}
+	}()
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 1024*1024), 32*1024*1024) // el result final puede ser enorme
+	var result string
+	var raw strings.Builder
+	tools := 0
+	for sc.Scan() {
+		line := sc.Text()
+		raw.WriteString(line)
+		raw.WriteByte('\n')
+		var ev map[string]any
+		if json.Unmarshal([]byte(line), &ev) != nil {
+			continue
+		}
+		switch ev["type"] {
+		case "system":
+			if ev["subtype"] == "init" {
+				if mdl, _ := ev["model"].(string); mdl != "" {
+					log("modelo: " + mdl)
+				}
+			}
+		case "assistant":
+			if msg, ok := ev["message"].(map[string]any); ok {
+				if cont, ok := msg["content"].([]any); ok {
+					for _, c := range cont {
+						cm, _ := c.(map[string]any)
+						switch cm["type"] {
+						case "tool_use":
+							tools++
+							name, _ := cm["name"].(string)
+							log(fmt.Sprintf("→ herramienta %s (llamada #%d)", name, tools))
+						case "text":
+							if t, _ := cm["text"].(string); strings.TrimSpace(t) != "" {
+								log("✍ " + clip(t, 110))
+							}
+						}
+					}
+				}
+			}
+		case "result":
+			if s, _ := ev["result"].(string); s != "" {
+				result = s
+			}
+			if c, ok := ev["total_cost_usd"].(float64); ok {
+				log(fmt.Sprintf("✓ el modelo terminó · %ds · $%.3f", int(time.Since(start).Seconds()), c))
+			}
+		}
+	}
+	werr := cmd.Wait()
+	close(hbDone)
+	if werr != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("timeout de %s — el modelo no terminó a tiempo", r.Timeout)
+		}
+		if msg := strings.TrimSpace(errb.String()); msg != "" {
+			return "", fmt.Errorf("claude -p falló: %s", clip(msg, 200))
+		}
+		return "", fmt.Errorf("claude -p falló: %v", werr)
+	}
+	if result == "" {
+		// CLIs viejos / stubs: envelope {"result": …} o texto crudo
+		result = extractResult([]byte(raw.String()))
+	}
+	return result, nil
+}
+
+func defaultStr2(v, def string) string {
+	if strings.TrimSpace(v) != "" {
+		return v
+	}
+	return def
+}
+
 // extractResult: el envelope de `--output-format json` trae .result (string).
-// Si el shape cambió entre versiones del CLI, caemos al stdout crudo.
+// Si el shape cambió entre versiones del CLI, caemos al texto crudo.
 func extractResult(raw []byte) string {
 	var env struct {
 		Result string `json:"result"`
 	}
 	if json.Unmarshal(raw, &env) == nil && env.Result != "" {
 		return env.Result
+	}
+	// puede venir como JSONL con un envelope por línea
+	for _, line := range strings.Split(string(raw), "\n") {
+		if json.Unmarshal([]byte(line), &env) == nil && env.Result != "" {
+			return env.Result
+		}
 	}
 	return string(raw)
 }
@@ -121,9 +241,9 @@ func extractJSONBlock(s string) string {
 // ── paso enrich: la entrevista 2a en modo propuesta ──
 
 type enrichOut struct {
-	Clusters []gen.Cluster `json:"clusters"`
-	DAG      []string      `json:"dag"`
-	Principles []string    `json:"principles"`
+	Clusters   []gen.Cluster `json:"clusters"`
+	DAG        []string      `json:"dag"`
+	Principles []string      `json:"principles"`
 	Recommendations map[string]struct {
 		Value    any    `json:"value"`
 		Evidence string `json:"evidence"`
@@ -135,6 +255,7 @@ func (m *Manager) runEnrich() error {
 	ws := m.st.Workspace
 	inv := m.inv
 	seed := m.st.Answers
+	overrides := m.st.RoleOverrides
 	m.mu.Unlock()
 	if inv == nil || seed == nil {
 		return errors.New("corre el discover primero")
@@ -150,7 +271,13 @@ func (m *Manager) runEnrich() error {
 		"{{SEED_JSON}}", string(seedJSON),
 	).Replace(string(promptTmpl))
 
-	m.logs.Append("enrich", "consultando al modelo (clustering, DAG, principios)…")
+	nServices := 0
+	for _, r := range inv.Repos {
+		if inv.RoleOf(r.Name, overrides) == "service" {
+			nServices++
+		}
+	}
+	m.logs.Append("enrich", fmt.Sprintf("consultando al modelo: %d repos (%d services) → clustering, DAG, principios…", inv.RepoCount, nServices))
 	// el enrichment solo necesita el inventory (va inline en el prompt): en
 	// remoto corre LOCAL con tu claude — la ruta del VPS no existe aquí
 	dir := ws
@@ -175,8 +302,16 @@ func (m *Manager) runEnrich() error {
 			}
 		}
 		if valid {
-			m.st.Answers.Clusters = out.Clusters
+			// COBERTURA POR CÓDIGO, no por prompt: todo service sin abogado
+			// se agrega aquí — el modelo propone nombres/dominios, la regla
+			// la impone el sistema determinista (la casa siempre gana).
+			cs, added := gen.EnsureServiceCoverage(out.Clusters, m.inv, m.st.RoleOverrides)
+			m.st.Answers.Clusters = cs
+			for _, a := range added {
+				m.logs.Append("enrich", "⚠︎ el modelo omitió el servicio «"+a+"» — abogado svc-"+a+" agregado por la regla de cobertura")
+			}
 			m.st.Recommendations["clusters"] = "propuesto por el modelo leyendo el inventory"
+			m.logs.Append("enrich", fmt.Sprintf("clusters aplicados: %d (%d agregados por cobertura)", len(cs), len(added)))
 		} else {
 			m.logs.Append("enrich", "clusters del modelo inválidos — me quedo con los deterministas")
 		}
@@ -196,6 +331,6 @@ func (m *Manager) runEnrich() error {
 	}
 	m.st.AnswersRev++
 	m.persistLocked()
-	m.logs.Append("enrich", fmt.Sprintf("✓ propuesta aplicada al borrador (%d clusters, %d pasos de DAG)", len(m.st.Answers.Clusters), len(m.st.Answers.DAG)))
+	m.logs.Append("enrich", fmt.Sprintf("✓ propuesta en el borrador: %d clusters · DAG de %d pasos — revisa y edita en Agentes", len(m.st.Answers.Clusters), len(m.st.Answers.DAG)))
 	return nil
 }

@@ -311,6 +311,32 @@ func detectMatches(detect string, inv *Inventory) (string, bool) {
 
 func hasAny(inv *Inventory, key string) bool { return len(inv.Summary[key]) > 0 }
 
+// EnsureServiceCoverage — la regla de cobertura POR CÓDIGO: todo repo con rol
+// service debe tener abogado. Lo que el modelo omita se agrega como
+// svc-<repo> con owns TBD. Devuelve los agregados (para loguearlo).
+func EnsureServiceCoverage(clusters []Cluster, inv *Inventory, overrides map[string]string) ([]Cluster, []string) {
+	if inv == nil {
+		return clusters, nil
+	}
+	covered := map[string]bool{}
+	for _, c := range clusters {
+		for _, r := range c.Repos {
+			covered[r] = true
+		}
+	}
+	var added []string
+	for _, r := range inv.Repos {
+		if inv.RoleOf(r.Name, overrides) == "service" && !covered[r.Name] {
+			clusters = append(clusters, Cluster{
+				Agent: "svc-" + r.Name, Kind: "service", Repos: []string{r.Name},
+				Owns: "TBD — confirmar con el equipo",
+			})
+			added = append(added, r.Name)
+		}
+	}
+	return clusters, added
+}
+
 // MergeAnswers aplica un patch parcial (JSON del navegador) sobre el borrador:
 // mapas se fusionan recursivo, arrays y escalares se REEMPLAZAN. El resultado
 // se re-tipa contra el struct (campos desconocidos simplemente se ignoran).
