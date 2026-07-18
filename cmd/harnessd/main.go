@@ -597,7 +597,10 @@ func run(port int, wsPath string, setup bool) int {
 	mux.HandleFunc("/api/op/herdr", opH((*api.Op).OpHerdr))
 	mux.HandleFunc("/api/op/herdr-key", opH((*api.Op).OpHerdrKey))
 	mux.HandleFunc("/api/op/herdr-open", opH((*api.Op).OpHerdrOpen))
-	mux.HandleFunc("/api/op/targets", opH((*api.Op).OpTargets))
+	// targets = config GLOBAL (~/.config/harness/targets.json), sin workspace:
+	// el wizard debe poder dar de alta un VPS ANTES del paso 1 (authOp trae
+	// el mismo Guard de token+Host; emit es no-op sin workspace).
+	mux.HandleFunc("/api/op/targets", authOp.OpTargets)
 	mux.HandleFunc("/api/op/archive", opH((*api.Op).OpArchive))
 	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
 	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
