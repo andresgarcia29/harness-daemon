@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/andresgarcia29/harness-daemon/internal/collect"
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
+	"github.com/andresgarcia29/harness-daemon/internal/initflow"
 	"github.com/andresgarcia29/harness-daemon/internal/lock"
 	"github.com/andresgarcia29/harness-daemon/internal/store"
 	"github.com/andresgarcia29/harness-daemon/internal/webui"
@@ -56,6 +59,7 @@ func main() {
 	port := fs.Int("port", 0, "puerto (solo 127.0.0.1)")
 	ws := fs.String("workspace", ".", "workspace a observar")
 	noOpen := fs.Bool("no-open", false, "no abrir el navegador")
+	setup := fs.Bool("setup", false, "arranca sin workspace: el wizard de init lo fija (ADR-0011)")
 	_ = fs.Parse(rest)
 	dport := *port
 	if dport == 0 {
@@ -70,7 +74,7 @@ func main() {
 	case "ensure":
 		os.Exit(ensure(dport, *ws))
 	case "run":
-		os.Exit(run(dport, *ws))
+		os.Exit(run(dport, *ws, *setup))
 	case "snapshot":
 		os.Exit(snapshotCmd(*ws))
 	case "status":
@@ -79,6 +83,8 @@ func main() {
 		os.Exit(stop(dport))
 	case "ui":
 		os.Exit(uiCmd(*port, *ws, *noOpen))
+	case "init":
+		os.Exit(initCmd(*port, *noOpen))
 	case "config":
 		os.Exit(configCmd(fs.Args()))
 	default:
@@ -147,12 +153,19 @@ func ensure(port int, wsPath string) int {
 		fmt.Printf("✅ harnessd ya corriendo (pid %d, v%s) → http://127.0.0.1:%d\n", h.PID, h.Version, port)
 		return 0 // nueve de cada diez llegan aquí, en ~5ms
 	}
+	absWS, _ := filepath.Abs(wsPath)
+	return launchDetached(port, []string{"run", "--port", strconv.Itoa(port), "--workspace", absWS})
+}
+
+// launchDetached se relanza a sí mismo con `args` en sesión propia (sobrevive
+// al cierre de la terminal), logs en ConfigDir, y espera a que /health conteste.
+// Lo comparten ensure (daemon normal) e init (daemon en modo setup).
+func launchDetached(port int, args []string) int {
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ no sé quién soy: %v\n", err)
 		return 1
 	}
-	absWS, _ := filepath.Abs(wsPath)
 	logPath := filepath.Join(ident.ConfigDir(), "harnessd.log")
 	_ = os.MkdirAll(ident.ConfigDir(), 0o700)
 	logf, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
@@ -161,7 +174,7 @@ func ensure(port int, wsPath string) int {
 		return 1
 	}
 	defer logf.Close()
-	cmd := exec.Command(exe, "run", "--port", strconv.Itoa(port), "--workspace", absWS)
+	cmd := exec.Command(exe, args...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // sobrevive al cierre de la terminal
@@ -288,17 +301,25 @@ func snapshotCmd(wsPath string) int {
 	return 0
 }
 
-func run(port int, wsPath string) int {
+func run(port int, wsPath string, setup bool) int {
 	started := time.Now()
 	m, err := ident.ThisMachine()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		return 1
 	}
-	w, err := ident.ResolveWorkspace(wsPath, m.ID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
-		return 1
+	// Late binding del workspace (ADR-0011): en modo setup el daemon arranca
+	// SIN workspace y el paso 1 del wizard lo fija UNA vez. Un proceso, UN
+	// workspace (ADR-0005) — solo que se asigna tarde, sin relanzar (relanzar
+	// rotaría el op-token del HTML y mataría la página del wizard).
+	var wsVal atomic.Pointer[ident.Workspace]
+	if !setup {
+		w, err := ident.ResolveWorkspace(wsPath, m.ID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			return 1
+		}
+		wsVal.Store(&w)
 	}
 
 	ln, err := lock.Acquire(port)
@@ -322,36 +343,68 @@ func run(port int, wsPath string) int {
 		return 1
 	}
 	defer st.Close()
+	mode := "all-in-one"
+	if setup {
+		mode = "setup"
+	}
 	health := lock.Health{
 		Name: "harnessd", Version: Version, Protocol: lock.Protocol,
-		PID: os.Getpid(), Mode: "all-in-one", Started: started.Unix(),
+		PID: os.Getpid(), Mode: mode, Started: started.Unix(),
 		DB: dbPath,
 	}
 	if st.Dialect == "postgres" {
 		fmt.Println("   almacén: Postgres (conectado desde el panel)")
 	}
 	_ = st.SeedBuiltinPrices() // no pisa ediciones del usuario; sin esto todo costo es NULL
-	op := api.NewOp(w.Path, w.ID, st, port)
+
+	// authOp existe desde el primer byte servido: su token viaja en el HTML.
+	// Con WS vacío solo sirve para Guard; el Op real nace al adoptar workspace.
+	authOp := api.NewOp("", "", st, port)
+	var opPtr atomic.Pointer[api.Op]
+	collectQuit := make(chan struct{})
+	var collectOnce sync.Once
+	startCollect := func(w ident.Workspace) {
+		collectOnce.Do(func() {
+			col := collect.New(st, m, w)
+			go func() {
+				t := time.NewTicker(2 * time.Second)
+				defer t.Stop()
+				for {
+					select {
+					case <-collectQuit:
+						return
+					case now := <-t.C:
+						_ = col.Tick(now.Unix()) // fail-open: telemetría jamás tumba al daemon
+					}
+				}
+			}()
+		})
+	}
+	adopt := func(path string) error {
+		w, err := ident.ResolveWorkspace(path, m.ID)
+		if err != nil {
+			return err
+		}
+		wsVal.Store(&w)
+		opPtr.Store(api.NewOpWithToken(authOp.Token, w.Path, w.ID, st, port))
+		startCollect(w)
+		return nil
+	}
+	var mgr *initflow.Manager
+	if setup {
+		mgr = initflow.New(Version, adopt)
+	} else {
+		w := *wsVal.Load()
+		opPtr.Store(api.NewOpWithToken(authOp.Token, w.Path, w.ID, st, port))
+		startCollect(w)
+		mgr = initflow.Attach(Version, w.Path, adopt) // nil si no hay init a medias
+	}
 	// precios de modelos observados sin precio: sync automático al arranque
 	// (fail-open, en background — sin red simplemente no pasa nada)
 	go func() {
 		time.Sleep(8 * time.Second) // deja que el colector observe modelos primero
 		if added, _, err := api.SyncPrices(st); err == nil && len(added) > 0 {
 			fmt.Printf("   precios sincronizados desde OpenRouter: %v\n", added)
-		}
-	}()
-	col := collect.New(st, m, w)
-	collectQuit := make(chan struct{})
-	go func() {
-		t := time.NewTicker(2 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-collectQuit:
-				return
-			case now := <-t.C:
-				_ = col.Tick(now.Unix()) // fail-open: telemetría jamás tumba al daemon
-			}
 		}
 	}()
 
@@ -370,10 +423,32 @@ func run(port int, wsPath string) int {
 			return
 		}
 		costs, _ := st.Costs()
+		wsName := ""
+		if w := wsVal.Load(); w != nil {
+			wsName = w.Name
+		}
 		_ = json.NewEncoder(rw).Encode(map[string]any{
-			"rows": counts, "costs": costs, "workspace": w.Name, "db": dbPath,
+			"rows": counts, "costs": costs, "workspace": wsName, "db": dbPath,
 		})
 	})
+	// makeSnap: el snapshot según haya o no workspace adoptado. En modo setup
+	// (aún sin workspace) el panel vive solo del wizard: snapshot vacío + init.
+	makeSnap := func(r *http.Request) *api.Snapshot {
+		var snap *api.Snapshot
+		if w := wsVal.Load(); w != nil {
+			snap = buildSnapshot(r, st, *w)
+		} else {
+			snap = api.EmptySnapshot()
+			snap.TS = time.Now().Unix()
+			snap.Mode = "setup"
+			snap.Targets = api.LoadTargets()
+			snap.Connections = api.Connections()
+		}
+		if mgr != nil {
+			snap.Init = mgr.Public()
+		}
+		return snap
+	}
 	// Fase 1: el daemon ES el backend del panel. Sirve el snapshot (leído del
 	// SQLite) y el build de React embebido. Un proceso, todos los workspaces.
 	mux.HandleFunc("/api/state", func(rw http.ResponseWriter, r *http.Request) {
@@ -382,7 +457,7 @@ func run(port int, wsPath string) int {
 		}
 		rw.Header().Set("Content-Type", "application/json")
 		rw.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(rw).Encode(buildSnapshot(r, st, w))
+		_ = json.NewEncoder(rw).Encode(makeSnap(r))
 	})
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
 	// colector ya escribe cada 2 s; aquí re-emitimos el snapshot al mismo ritmo.
@@ -401,7 +476,7 @@ func run(port int, wsPath string) int {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		send := func() bool {
-			b, _ := json.Marshal(buildSnapshot(r, st, w))
+			b, _ := json.Marshal(makeSnap(r))
 			if _, err := fmt.Fprintf(rw, "event: snapshot\ndata: %s\n\n", b); err != nil {
 				return false
 			}
@@ -425,10 +500,20 @@ func run(port int, wsPath string) int {
 	// Paridad de lectura: el grafo completo de una tarea, sus chips de git.
 	mux.HandleFunc("/api/task-events", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
+		w := wsVal.Load()
+		if w == nil {
+			_ = json.NewEncoder(rw).Encode([]any{})
+			return
+		}
 		_ = json.NewEncoder(rw).Encode(api.TaskEvents(st, w.ID, r.URL.Query().Get("task")))
 	})
 	mux.HandleFunc("/api/task-git", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
+		w := wsVal.Load()
+		if w == nil {
+			_ = json.NewEncoder(rw).Encode(map[string]any{})
+			return
+		}
 		_ = json.NewEncoder(rw).Encode(api.BuildTaskGit(w.Path, r.URL.Query().Get("task")))
 	})
 	mux.HandleFunc("/api/session", func(rw http.ResponseWriter, r *http.Request) {
@@ -452,18 +537,102 @@ func run(port int, wsPath string) int {
 		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
 		_ = json.NewEncoder(rw).Encode(herdr.Remote(ssh).Snapshot())
 	})
-	// El plano de OPERAR (ADR-0010) — crear trabajo, jamás merges.
-	mux.HandleFunc("/api/op/task", op.OpTask)
-	mux.HandleFunc("/api/op/respond", op.OpRespond)
-	mux.HandleFunc("/api/op/pane-send", op.OpPaneSend)
-	mux.HandleFunc("/api/op/herdr", op.OpHerdr)
-	mux.HandleFunc("/api/op/herdr-key", op.OpHerdrKey)
-	mux.HandleFunc("/api/op/herdr-open", op.OpHerdrOpen)
-	mux.HandleFunc("/api/op/targets", op.OpTargets)
-	mux.HandleFunc("/api/op/archive", op.OpArchive)
-	mux.HandleFunc("/api/op/probe-mcp", op.OpProbeMcp)
-	mux.HandleFunc("/api/op/connect", op.OpConnect)
-	mux.HandleFunc("/api/op/sync-prices", op.OpSyncPrices)
+	// El plano de OPERAR (ADR-0010) — crear trabajo, jamás merges. Con late
+	// binding: hasta que el paso 1 del init fija workspace, estas rutas dan 409.
+	opH := func(f func(*api.Op, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+		return func(rw http.ResponseWriter, r *http.Request) {
+			o := opPtr.Load()
+			if o == nil {
+				rw.Header().Set("Content-Type", "application/json")
+				rw.WriteHeader(http.StatusConflict)
+				_, _ = rw.Write([]byte(`{"ok":false,"error":"workspace no fijado — completa el paso 1 del init"}`))
+				return
+			}
+			f(o, rw, r)
+		}
+	}
+	mux.HandleFunc("/api/op/task", opH((*api.Op).OpTask))
+	mux.HandleFunc("/api/op/respond", opH((*api.Op).OpRespond))
+	mux.HandleFunc("/api/op/pane-send", opH((*api.Op).OpPaneSend))
+	mux.HandleFunc("/api/op/herdr", opH((*api.Op).OpHerdr))
+	mux.HandleFunc("/api/op/herdr-key", opH((*api.Op).OpHerdrKey))
+	mux.HandleFunc("/api/op/herdr-open", opH((*api.Op).OpHerdrOpen))
+	mux.HandleFunc("/api/op/targets", opH((*api.Op).OpTargets))
+	mux.HandleFunc("/api/op/archive", opH((*api.Op).OpArchive))
+	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
+	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
+	mux.HandleFunc("/api/op/sync-prices", opH((*api.Op).OpSyncPrices))
+
+	// El plano de INIT (ADR-0011): el wizard de onboarding. Mismo Guard que
+	// operar (Host + token del HTML); la lógica vive en initflow.Manager.
+	if mgr != nil {
+		mux.HandleFunc("/api/init/state", func(rw http.ResponseWriter, r *http.Request) {
+			if !api.GuardRead(rw, r) {
+				return
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(rw).Encode(map[string]any{"active": true, "state": mgr.Public()})
+		})
+		mux.HandleFunc("/api/init/logs", func(rw http.ResponseWriter, r *http.Request) {
+			if !api.GuardRead(rw, r) {
+				return
+			}
+			fl, ok := rw.(http.Flusher)
+			if !ok {
+				http.Error(rw, "sin streaming", http.StatusInternalServerError)
+				return
+			}
+			var after int64
+			fmt.Sscanf(r.Header.Get("Last-Event-ID"), "%d", &after)
+			replay, ch, cancel := mgr.Logs().Subscribe(after)
+			defer cancel()
+			rw.Header().Set("Content-Type", "text/event-stream")
+			rw.Header().Set("Cache-Control", "no-store")
+			rw.Header().Set("Connection", "keep-alive")
+			emit := func(ll initflow.LogLine) bool {
+				b, _ := json.Marshal(ll)
+				if _, err := fmt.Fprintf(rw, "id: %d\nevent: log\ndata: %s\n\n", ll.Seq, b); err != nil {
+					return false
+				}
+				fl.Flush()
+				return true
+			}
+			for _, ll := range replay {
+				if !emit(ll) {
+					return
+				}
+			}
+			beat := time.NewTicker(15 * time.Second)
+			defer beat.Stop()
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case ll := <-ch:
+					if !emit(ll) {
+						return
+					}
+				case <-beat.C:
+					if _, err := fmt.Fprint(rw, ": beat\n\n"); err != nil {
+						return
+					}
+					fl.Flush()
+				}
+			}
+		})
+		mux.HandleFunc("/api/op/init/", func(rw http.ResponseWriter, r *http.Request) {
+			body, ok := authOp.Guard(rw, r)
+			if !ok {
+				return
+			}
+			action := strings.TrimPrefix(r.URL.Path, "/api/op/init/")
+			res, code := mgr.Handle(action, body)
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(code)
+			_ = json.NewEncoder(rw).Encode(res)
+		})
+	}
 	mux.HandleFunc("/api/db", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(rw).Encode(api.DBInfo(st, dbPath))
@@ -509,7 +678,7 @@ func run(port int, wsPath string) int {
 
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
 	// /api ni /health ni /admin.
-	web := webui.Handler(op.Token)
+	web := webui.Handler(authOp.Token)
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) { web.ServeHTTP(rw, r) })
 
 	quit := make(chan struct{})
@@ -529,7 +698,9 @@ func run(port int, wsPath string) int {
 
 	fmt.Printf("🔭 harnessd %s → http://127.0.0.1:%d\n", Version, port)
 	fmt.Printf("   máquina   %s… (%s/%s, %s)\n", m.ID[:8], m.OS, m.Arch, m.Kind)
-	if w.Local {
+	if w := wsVal.Load(); w == nil {
+		fmt.Printf("   modo setup — sin workspace aún: el wizard lo fija → http://127.0.0.1:%d/#/init\n", port)
+	} else if w.Local {
 		fmt.Printf("   workspace %s — SIN git remote: es local a esta máquina y no se puede unificar con otras\n", w.Name)
 	} else {
 		fmt.Printf("   workspace %s → %s\n", w.Name, w.Remote)

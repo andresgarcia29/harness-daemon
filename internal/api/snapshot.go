@@ -124,6 +124,9 @@ type Snapshot struct {
 	Targets       []Target         `json:"targets"`        // máquinas remotas (VPS) por SSH
 	ArchivedTasks []string         `json:"archived_tasks"` // tareas ocultas (el bus las revive si no se excluyen)
 	Warning       string           `json:"warning,omitempty"`
+	// Init es el estado del wizard de onboarding (initflow.PublicState) cuando
+	// hay un init activo; `any` para no crear ciclo de imports con initflow.
+	Init any `json:"init,omitempty"`
 }
 type wsInfo struct {
 	Name string `json:"name"`

@@ -58,6 +58,13 @@ func NewOp(ws, wsID string, db store.Queryer, port int) *Op {
 	return &Op{Token: hex.EncodeToString(b), WS: ws, WSID: wsID, DB: db, Port: port}
 }
 
+// NewOpWithToken crea el Op de un workspace adoptado tarde (modo setup,
+// ADR-0011) conservando el token que ya viajó en el HTML: relanzar el daemon
+// rotaría el token y mataría la página del wizard a mitad del flujo.
+func NewOpWithToken(token, ws, wsID string, db store.Queryer, port int) *Op {
+	return &Op{Token: token, WS: ws, WSID: wsID, DB: db, Port: port}
+}
+
 // Guard valida token + Host + tamaño. Devuelve el body o escribe el error.
 // HostAllowed defiende contra DNS-rebinding: sólo aceptamos si el navegador
 // mandó Host 127.0.0.1/localhost (un sitio malicioso rebindeado mandaría su
