@@ -399,6 +399,9 @@ func run(port int, wsPath string, setup bool) int {
 		startCollect(w)
 		mgr = initflow.Attach(Version, w.Path, adopt) // nil si no hay init a medias
 	}
+	if mgr != nil {
+		mgr.SetTargetResolver(api.ResolveTarget)
+	}
 	// precios de modelos observados sin precio: sync automático al arranque
 	// (fail-open, en background — sin red simplemente no pasa nada)
 	go func() {

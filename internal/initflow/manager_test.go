@@ -180,6 +180,59 @@ func TestAttach(t *testing.T) {
 	}
 }
 
+func TestBrowse(t *testing.T) {
+	home := setupEnv(t)
+	if err := os.MkdirAll(filepath.Join(home, "proyectos", "uno"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".oculta"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "archivo.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New("t", (&adoptSpy{}).fn)
+	res, code := m.Handle("browse", map[string]any{"path": ""})
+	if code != 200 {
+		t.Fatalf("browse home: %d %v", code, res)
+	}
+	r := res.(map[string]any)
+	dirs := r["dirs"].([]string)
+	if len(dirs) != 1 || dirs[0] != "proyectos" {
+		t.Fatalf("solo dirs visibles, sin ocultos ni archivos: %v", dirs)
+	}
+	if r["parent"] != "" {
+		t.Fatal("el techo del browse es el home")
+	}
+	// fuera de home → 400
+	if _, code := m.Handle("browse", map[string]any{"path": "/etc"}); code != 400 {
+		t.Fatal("browse fuera de home debe fallar")
+	}
+}
+
+func TestTarget(t *testing.T) {
+	setupEnv(t)
+	m := New("t", (&adoptSpy{}).fn)
+	m.SetTargetResolver(func(name string) (string, bool) {
+		if name == "corvux" {
+			return "andres@vps", true
+		}
+		return "", false
+	})
+	if _, code := m.Handle("target", map[string]any{"name": "corvux"}); code != 200 {
+		t.Fatal("target válido")
+	}
+	if m.Public().Target != "corvux" {
+		t.Fatal("el target debe quedar en el estado")
+	}
+	if _, code := m.Handle("target", map[string]any{"name": "yolo"}); code != 400 {
+		t.Fatal("target desconocido debe dar 400")
+	}
+	if _, code := m.Handle("target", map[string]any{"name": ""}); code != 200 {
+		t.Fatal("volver a local siempre vale")
+	}
+}
+
 func TestLogBufferReplay(t *testing.T) {
 	l := NewLogBuffer()
 	l.Append("clone", "línea 1")
