@@ -1,0 +1,3 @@
+# Falsos positivos: sha256 de archivos en el manifest de assets (no son claves)
+5035348f1e743076955b89a839e8d523e8d9d15b:internal/gen/assets/manifest.json:generic-api-key:58
+5035348f1e743076955b89a839e8d523e8d9d15b:internal/gen/assets/manifest.json:generic-api-key:62
