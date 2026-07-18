@@ -239,6 +239,9 @@ func run(port int, wsPath string) int {
 	// Fase 1: el daemon ES el backend del panel. Sirve el snapshot (leído del
 	// SQLite) y el build de React embebido. Un proceso, todos los workspaces.
 	mux.HandleFunc("/api/state", func(rw http.ResponseWriter, r *http.Request) {
+		if !api.GuardRead(rw, r) {
+			return
+		}
 		snap, err := api.Build(st.DB, w.ID, w.Path, time.Now().Unix())
 		rw.Header().Set("Content-Type", "application/json")
 		rw.Header().Set("Cache-Control", "no-store")
@@ -264,6 +267,9 @@ func run(port int, wsPath string) int {
 	// SSE: el frontend espera un evento "snapshot" con el estado entero. El
 	// colector ya escribe cada 2 s; aquí re-emitimos el snapshot al mismo ritmo.
 	mux.HandleFunc("/api/stream", func(rw http.ResponseWriter, r *http.Request) {
+		if !api.GuardRead(rw, r) {
+			return
+		}
 		fl, ok := rw.(http.Flusher)
 		if !ok {
 			http.Error(rw, "sin streaming", http.StatusInternalServerError)
@@ -333,6 +339,9 @@ func run(port int, wsPath string) int {
 	// está o su server no corre, devuelve available:false — la vista se degrada.
 	// Cross-workspace a propósito: ves todo lo que corre en la máquina.
 	mux.HandleFunc("/api/herdr", func(rw http.ResponseWriter, r *http.Request) {
+		if !api.GuardRead(rw, r) {
+			return
+		}
 		rw.Header().Set("Content-Type", "application/json")
 		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
 		_ = json.NewEncoder(rw).Encode(herdr.Remote(ssh).Snapshot())
@@ -352,6 +361,9 @@ func run(port int, wsPath string) int {
 		_ = json.NewEncoder(rw).Encode(api.DBInfo(st.DB, dbPath))
 	})
 	mux.HandleFunc("/api/herdr/pane", func(rw http.ResponseWriter, r *http.Request) {
+		if !api.GuardRead(rw, r) {
+			return
+		}
 		rw.Header().Set("Content-Type", "application/json")
 		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
 		txt, err := herdr.Remote(ssh).PaneRead(r.URL.Query().Get("id"), 60, r.URL.Query().Get("fmt"))

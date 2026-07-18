@@ -63,10 +63,17 @@ func loadTargetsLocked() []Target {
 
 func saveTargetsLocked(ts []Target) error {
 	b, _ := json.MarshalIndent(ts, "", "  ")
-	if err := os.MkdirAll(filepath.Dir(targetsPath()), 0o755); err != nil {
+	dir := filepath.Dir(targetsPath())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(targetsPath(), b, 0o600)
+	// Escritura ATÓMICA: tmp + rename. Un crash a mitad no deja el archivo
+	// truncado (que loadTargets leería como "cero targets" y perderías todo).
+	tmp := targetsPath() + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, targetsPath())
 }
 
 // AddTarget agrega/actualiza un target (por nombre). Valida nombre y ssh.
