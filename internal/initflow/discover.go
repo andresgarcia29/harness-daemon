@@ -166,6 +166,15 @@ func (m *Manager) handleAnswersConfirm(map[string]any) (any, int) {
 		return map[string]any{"ok": false, "error": "faltan campos obligatorios (nombre, flow, autonomía, secretos)"}, 400
 	}
 	m.logs.Append("discover", "configuración confirmada por el usuario")
+	// confirmar la configuración ES la decisión de seguir: un enrich que
+	// nunca se corrió deja de bloquear el avance (el usuario quedaba atorado
+	// sin poder pasar a Agentes hasta clicar el LLM o el skip escondido)
+	if i := m.stepIdx("enrich"); i >= 0 && m.st.Steps[i].Status == Pending {
+		m.st.Steps[i].Status = Skipped
+		m.st.Steps[i].Detail = "saltado al confirmar la configuración (los defaults deterministas están)"
+		m.logs.Append("enrich", "no corrido — configuración confirmada sin el modelo; puedes correrlo después con retry")
+	}
+	m.advanceLocked()
 	m.persistLocked()
 	return map[string]any{"ok": true}, 200
 }

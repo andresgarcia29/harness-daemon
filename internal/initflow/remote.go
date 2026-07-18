@@ -77,15 +77,23 @@ func (m *Manager) remoteHarness(step string, args []string, stdin []byte, timeou
 	return m.remoteExec(step, append([]string{"harness"}, args...), stdin, timeout)
 }
 
-// ensureRemoteBinary verifica `harness` en el VPS; si falta, intenta
-// instalarlo del release público (curl → ~/.local/bin). Si no puede, el error
-// trae la instrucción exacta.
+// ensureRemoteBinary verifica `harness` en el VPS y lo SINCRONIZA a la
+// versión local: local y remoto hablan un protocolo (progreso @@repo, shapes
+// JSON) — un binario viejo allá rompe features nuevas acá en silencio (fue
+// el bug de los checks de clone que no se movían). Si no puede instalar, el
+// error trae la instrucción exacta.
 func (m *Manager) ensureRemoteBinary(step string) error {
 	if out, err := m.remoteHarness(step, []string{"version"}, nil, 15*time.Second); err == nil {
-		m.logs.Append(step, "harness en el VPS: v"+strings.TrimSpace(string(out)))
-		return nil
+		v := strings.TrimSpace(string(out))
+		// dev = builds locales (tests, dev loop): no hay release que pinear
+		if v == m.version || m.version == "dev" || v == "dev" {
+			m.logs.Append(step, "harness en el VPS: v"+v+" ✓")
+			return nil
+		}
+		m.logs.Append(step, "harness en el VPS v"+v+" ≠ local v"+m.version+" — lo sincronizo…")
+	} else {
+		m.logs.Append(step, "harness no está en el VPS — lo instalo del release público…")
 	}
-	m.logs.Append(step, "harness no está en el VPS — intento instalarlo del release público…")
 	uname, err := m.remoteExec(step, []string{"uname", "-sm"}, nil, 15*time.Second)
 	if err != nil {
 		return fmt.Errorf("no pude hablar con el VPS: %w", err)
@@ -104,7 +112,11 @@ func (m *Manager) ensureRemoteBinary(step string) error {
 	default:
 		return fmt.Errorf("arquitectura sin binario: %s", arch)
 	}
-	url := fmt.Sprintf("https://github.com/andresgarcia29/harness-daemon/releases/latest/download/harnessd-%s-%s", osName, arch)
+	rel := "latest/download"
+	if m.version != "dev" {
+		rel = "download/v" + m.version // la MISMA versión que el orquestador local
+	}
+	url := fmt.Sprintf("https://github.com/andresgarcia29/harness-daemon/releases/%s/harnessd-%s-%s", rel, osName, arch)
 	script := `mkdir -p "$HOME/.local/bin" && curl -fsSL -o "$HOME/.local/bin/harness" ` + url +
 		` && chmod +x "$HOME/.local/bin/harness" && "$HOME/.local/bin/harness" version`
 	if out, err := m.remoteExec(step, []string{"sh", "-c", script}, nil, 2*time.Minute); err != nil {
