@@ -28,7 +28,8 @@ type Manager struct {
 	// api.ResolveTarget para no crear ciclo de imports). nil = sin targets.
 	resolveTarget func(name string) (string, bool)
 
-	inv *gen.Inventory // inventario cargado (artefacto <ws>/inventory.json)
+	inv         *gen.Inventory // inventario cargado (artefacto <ws>/inventory.json)
+	remoteBinOK bool           // el binario del VPS ya se sincronizó esta sesión
 }
 
 // SetTargetResolver inyecta el validador de targets (api.ResolveTarget).
@@ -341,6 +342,9 @@ func (m *Manager) handleTarget(body map[string]any) (any, int) {
 		return map[string]any{"ok": false,
 			"error": "el init ya está anclado a un workspace en «" + orLocal(m.st.Target) + "» — no se cambia de máquina a medias"}, 409
 	}
+	if m.st.Target != name {
+		m.remoteBinOK = false // otra máquina = re-verificar su binario
+	}
 	m.st.Target = name
 	m.persistLocked()
 	return map[string]any{"ok": true, "target": name}, 200
@@ -554,7 +558,7 @@ func (m *Manager) handleStep(body map[string]any) (any, int) {
 			// local ANTES de correr — protocolo parejo o nada (enrich corre
 			// local y no lo necesita)
 			if m.isRemote() && id != "enrich" && id != "workspace" {
-				err = m.ensureRemoteBinary(id)
+				err = m.ensureRemoteBinaryOnce(id)
 			}
 			if err == nil {
 				err = r(m)
