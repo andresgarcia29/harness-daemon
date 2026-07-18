@@ -43,6 +43,7 @@ type State struct {
 	Steps          []StepState `json:"steps"`
 	GitHub         *GHState    `json:"github,omitempty"`
 	Repos          []RepoSel   `json:"repos,omitempty"`
+	Requirements   []ReqState  `json:"requirements,omitempty"`
 	CompletedAt    int64       `json:"completed_at,omitempty"`
 }
 
@@ -111,6 +112,7 @@ type PublicState struct {
 	Target        string      `json:"target,omitempty"`
 	GitHub        *GHState    `json:"github,omitempty"`
 	Repos         []RepoSel   `json:"repos,omitempty"`
+	Requirements  []ReqState  `json:"requirements,omitempty"`
 	CompletedAt   int64       `json:"completed_at,omitempty"`
 }
 

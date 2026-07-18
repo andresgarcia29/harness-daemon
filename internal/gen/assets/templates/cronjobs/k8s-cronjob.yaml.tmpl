@@ -1,0 +1,48 @@
+# CronJob genérico del harness — se instancia UNO por job elegido.
+# Patrón: imagen con claude CLI + el meta-repo clonado; el runner decide
+# si despierta al agente. Auth recomendada en GKE: Vertex + Workload
+# Identity (sin secretos de larga vida): CLAUDE_CODE_USE_VERTEX=1.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: harness-{{JOB_NAME}}
+  namespace: {{NAMESPACE}}
+spec:
+  schedule: "{{SCHEDULE}}"          # ver docs/harness/cronjobs.md
+  concurrencyPolicy: Forbid          # nunca dos corridas del mismo job
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400   # tope duro 4h
+      backoffLimit: 0                # el circuit breaker es del runner, no de K8s
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: harness-agent   # Workload Identity → Vertex
+          containers:
+            - name: job
+              image: {{HARNESS_IMAGE}}        # claude CLI + git + gh + jq + toolchain
+              workingDir: /workspace
+              command: ["bash", "-lc"]
+              args:
+                - |
+                  git clone --depth 1 {{HARNESS_REPO_URL}} /workspace \
+                    && cd /workspace \
+                    && bash scripts/repos.sh pull --shallow || true \
+                    && bash scripts/cronjobs/cron-runner.sh scripts/cronjobs/jobs/{{JOB_NAME}}.sh
+              env:
+                - name: CLAUDE_CODE_USE_VERTEX
+                  value: "1"
+                - name: ANTHROPIC_VERTEX_PROJECT_ID
+                  value: "{{GCP_PROJECT}}"
+                - name: CLAUDE_CODE_ENABLE_TELEMETRY
+                  value: "1"
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "harness.job={{JOB_NAME}},harness.project={{PROJECT_SLUG}}"
+              envFrom:
+                - secretRef:
+                    name: harness-cron-secrets   # GH_TOKEN, SLACK_WEBHOOK_URL, ALERTMANAGER_URL…
+              resources:
+                requests: { cpu: 500m, memory: 1Gi }
+                limits:   { cpu: "2",  memory: 4Gi }

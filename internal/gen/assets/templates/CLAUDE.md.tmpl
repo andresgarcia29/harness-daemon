@@ -1,0 +1,87 @@
+# {{PROJECT_NAME}} Workspace
+
+Eres un agente en el workspace multi-repo de {{PROJECT_NAME}}. Este
+archivo es un MAPA, no un manual: te dice dónde está la verdad. Si
+contradice a `docs/`, gana `docs/` — y repórtalo.
+
+## Cómo está organizado el mundo
+
+- Repos clonados en `repos/` (lista canónica: `manifest.yaml`). Son
+  regenerables; el harness solo versiona config, docs y agentes.
+- Cada repo tiene su CLAUDE.md con SUS convenciones. Léelo SIEMPRE
+  antes de tocar ese repo. Este archivo nunca los duplica.
+- Conocimiento transversal: `docs/` (system of record,
+  `docs/index.md` es el catálogo).
+- El harness (agentes, comandos, hooks): `.claude/`.
+- Estado por tarea: `tasks/<id>/` (task.md, plan.md, veredictos, logs).
+
+## Mapa de la plataforma
+
+{{REPO_TABLE}}
+
+Dirección de dependencias (ley, referencia del DAG de shipping):
+`{{DEP_ORDER}}`
+
+## Leyes globales (no negociables; las duras tienen hook o gate)
+
+1. **Push a main SOLO vía `scripts/ship.sh`** — hook lo bloquea.
+2. **Contratos expand/contract** — `buf breaking` es gate duro.
+3. **Ownership exclusivo de datos** — `docs/architecture/map.md`.
+   En duda, RFC; nunca suposición.
+4. **Una tarea = un worktree por repo** (`scripts/worktree-task.sh`).
+   El clon canónico está protegido por hook.
+5. **Trailer `Task: <id>` en todo commit** — gate en ship.sh.
+6. **Presupuestos**: máx {{LOOP_BUDGET}} iteraciones por loop; RFC máx
+   2 rondas. Agotado → humano.
+7. **Decisiones fuera de `docs/` NO EXISTEN.** Lo decidido en chat se
+   propone como ADR o se perdió.
+
+## Pipeline (detalle: docs/harness/pipeline.md)
+
+`/feature` → `/rfc` → `/implement` → `/review` → `/ship` → verificación
+canary. Rojo en deploy: ROLLBACK PRIMERO, diagnóstico después.
+`/auto <ticket | "prompt">` corre TODO eso sin intervención humana: la
+ambigüedad se resuelve con evidencia y se declara en
+`tasks/<id>/assumptions.md`; solo para donde una ley lo exige.
+Semanal: `/promote` (memoria → ley). Roles: `.claude/agents/`.
+
+## Secretos (jamás valores en repo ni en chat)
+
+- Fuente: {{SECRETS_SOURCE}}. Materializar: `scripts/secrets.sh pull`
+  → `.secrets` (gitignoreado).
+- TODO comando autenticado corre vía `scripts/with-secrets.sh <cmd>` —
+  único punto de inyección. Nunca exportes secretos a mano ni los
+  imprimas.
+
+## Economía de tokens (el contexto es el recurso escaso)
+
+- CLIs ruidosos (kubectl logs, gh run view, gcloud) SIEMPRE vía
+  `scripts/quiet.sh <cmd>` — head+tail y dump completo en
+  `.cache/quiet/`.
+- Preguntas cross-repo → grafo (`graphify query`), no grep masivo.
+- Docs de librerías → MCP context7, no web-search repetido.
+- Implementación → edición simbólica (Serena), no leer archivos
+  enteros.
+- Estado en archivos, no en conversación: sesión corta y desechable
+  por tarea. Audita gasto: `ccusage`.
+
+## Memoria
+
+- {{MEMORY_TOOL}}: al INICIAR tarea `mem_search` (task-id, repos); al
+  CERRAR `mem_save` (qué/por qué/aprendido). Solo perfiles orquestador
+  y arquitecto.
+- La memoria propone, git dispone: `/promote` la convierte en
+  ADR/regla/gate o expira.
+
+## Qué NO hacer
+
+- No crear documentación fuera de `docs/`.
+- No resolver conflictos entre servicios inventando: eso es un RFC.
+- No asumir estado de la nube: verifica con CLIs (vía quiet.sh).
+- No agregar dependencias sin registrarlas en el ADR de la tarea.
+- No puentear un gate. Si un gate estorba, se discute con humanos.
+
+## Si algo aquí está desactualizado
+
+Presupuesto: ~110 líneas; doctor.sh valida que los links resuelvan.
+Drift → corrígelo en el mismo PR de tu tarea.

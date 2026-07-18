@@ -1,0 +1,37 @@
+---
+description: Fase RFC — abogados afectados responden UNA vez; el arquitecto sintetiza el plan con DAG
+argument-hint: <task-id>
+---
+
+Fase RFC para la tarea $ARGUMENTS (ya pasó intake: existe
+tasks/$ARGUMENTS/task.md).
+
+1. **Determina los clusters afectados** con el task.md y
+   `manifest.yaml` (campo cluster/agent por repo). En duda de fronteras
+   usa el grafo, no grep masivo.
+2. **Lanza al agente `architect`** para redactar la propuesta RFC:
+   scope, repos, cambios de contrato (diffs de proto), riesgos, y el
+   **delta-spec**: contra las specs maestras (`specs/<capability>/`),
+   secciones `## ADDED / MODIFIED / REMOVED Requirements` en notación
+   EARS con escenarios Given/When/Then. El delta ES la definición
+   formal del blast radius. La constitución
+   (`docs/constitution.md`) arbitra cualquier empate.
+3. **Lanza EN PARALELO a los abogados** de cada cluster afectado
+   (agentes `svc-*` / clusters). Cada uno responde UNA vez, JSON fijo.
+   ⚠️ Si alguno sigue `status: DRAFT`, PARA y pide ratificación al
+   humano — la ley no ratificada no es ley.
+4. **Síntesis del arquitecto**: máx 2 rondas; conflicto irresuelto →
+   escala al humano con las posiciones en limpio. Árbitro de
+   contratos: el repo proto, expand/contract siempre.
+5. **Plan** → `tasks/$ARGUMENTS/plan.md` + `delta-spec.md` + beads
+   (`bd create` con deps y ref al ticket): tareas por repo, DAG de
+   shipping, **cada tarea referencia los requirement IDs del delta que
+   satisface** (trazabilidad req→task→test), complexity (low|high — la
+   usa la escalación de models.yaml), forecast de tamaño de review
+   (presupuesto ~400 líneas/PR; si excede, rebana en tareas
+   entregables), y tareas de docs (ADR + doc de servicio) si cambia
+   comportamiento o contrato.
+6. Decisiones que sobreviven el RFC → borrador de ADR en docs/adr/.
+7. Cierra con el resumen al humano y sugiere: `/implement $ARGUMENTS`.
+
+Presupuesto: 1 ronda normal, 2 máximo. Este comando NO implementa.

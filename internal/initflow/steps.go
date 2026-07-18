@@ -7,7 +7,9 @@ func (m *Manager) runnerFor(id string) runner {
 	switch id {
 	case "clone":
 		return (*Manager).runClone
-	// F5: "requirements" · F6: "discover", "enrich"
+	case "requirements":
+		return (*Manager).runRequirements
+	// F6: "discover", "enrich"
 	// F7/F8: "generate", "archaeology" · F9: "mcps" · F10: "first-task", "finish"
 	default:
 		return nil

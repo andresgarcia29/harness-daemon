@@ -1,0 +1,42 @@
+---
+capability: {{CAPABILITY}}
+owner: {{OWNER_AGENT}}          # abogado que la defiende en RFCs
+status: DRAFT                    # ⚠️ ratificar; luego solo cambia vía delta-spec archivado
+verified_at: {{GENERATED_AT}}
+---
+
+# Spec — {{CAPABILITY}}
+
+Comportamiento ACTUAL del sistema (no el deseado: eso vive en
+delta-specs de cambios activos). Es el documento que los abogados citan
+en RFCs y contra el que el reviewer construye la compliance matrix.
+
+Reglas de escritura:
+- Un requirement por regla, notación EARS, con ID estable `{{PREFIX}}-N`.
+- Cada requirement lleva ≥1 escenario Given/When/Then verificable.
+- Requirement sin test enlazado = deseo, no spec (márcalo `tests: []`
+  y aparecerá en el reporte de mutation-sentinel/quality).
+
+## Requirements
+
+### {{PREFIX}}-1 — <título corto>
+
+`WHEN <evento> THE SYSTEM SHALL <comportamiento observable>`
+<!-- variantes EARS: ubicuo (THE SYSTEM SHALL…) · estado (WHILE…) ·
+     no deseado (IF <condición>, THEN THE SYSTEM SHALL…) ·
+     opcional (WHERE <feature>…) -->
+
+**Escenarios**
+```gherkin
+Scenario: <nombre>
+  Given <estado inicial>
+  When  <acción>
+  Then  <resultado observable>
+```
+
+**Tests**: `<ruta/al/test_que_lo_protege>` <!-- lo verifica el reviewer -->
+
+---
+*Los cambios a esta spec SOLO entran vía delta-spec de un RFC
+(secciones ADDED/MODIFIED/REMOVED) fusionada por /archive cuando el
+deploy quedó verde. Editar a mano = drift.*

@@ -17,9 +17,10 @@ type Manager struct {
 	mu      sync.Mutex
 	st      State
 	adopt   func(path string) error // fija el workspace del daemon (late binding, una vez)
-	logs    *LogBuffer
-	version string
-	running bool // a lo sumo un paso corriendo
+	logs       *LogBuffer
+	version    string
+	running    bool // a lo sumo un paso corriendo
+	installing bool // a lo sumo una instalación de dependencia corriendo
 
 	// resolveTarget valida el NOMBRE de un target SSH (main lo inyecta con
 	// api.ResolveTarget para no crear ciclo de imports). nil = sin targets.
@@ -123,10 +124,13 @@ func (m *Manager) Public() *PublicState {
 	}
 	repos := make([]RepoSel, len(m.st.Repos))
 	copy(repos, m.st.Repos)
+	reqs := make([]ReqState, len(m.st.Requirements))
+	copy(reqs, m.st.Requirements)
 	return &PublicState{
 		Active: m.st.Active, Step: m.st.Current, Steps: steps,
 		WorkspacePath: m.st.Workspace, Target: m.st.Target,
-		GitHub: m.st.GitHub, Repos: repos, CompletedAt: m.st.CompletedAt,
+		GitHub: m.st.GitHub, Repos: repos, Requirements: reqs,
+		CompletedAt: m.st.CompletedAt,
 	}
 }
 
@@ -192,6 +196,10 @@ func (m *Manager) Handle(action string, body map[string]any) (any, int) {
 		return m.handleRepoTags(body)
 	case "repos":
 		return m.handleRepoSelect(body)
+	case "requirements-check":
+		return m.handleRequirementsCheck(body)
+	case "install":
+		return m.handleInstall(body)
 	case "step":
 		return m.handleStep(body)
 	default:

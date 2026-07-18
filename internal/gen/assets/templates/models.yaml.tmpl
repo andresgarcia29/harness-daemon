@@ -1,0 +1,50 @@
+# models.yaml — política de ruteo de modelos del harness.
+# Claude Code no trae router dinámico: el modelo se fija en (a) el
+# frontmatter `model:` de cada agente, (b) /model en la sesión, y
+# (c) --model/--effort en headless (cronjobs). Este archivo es la
+# POLÍTICA que el orquestador y /harness-update aplican a esos tres
+# lugares. Cambiar aquí → correr /harness-update para re-estampar.
+#
+# Principio (sandwich de razonamiento): el gasto en razonamiento es
+# proporcional al FAN-OUT del artefacto — una spec o un plan lo leen N
+# agentes aguas abajo (modelo caro); un diff lo lee uno (modelo medio);
+# un digest no lo lee nadie dos veces (modelo barato).
+
+roles:
+  orquestador:  {{MODEL_ARCHITECT}}    # sesión principal: coordina, no implementa
+  architect:    {{MODEL_ARCHITECT}}    # planes, síntesis de RFC, ADRs
+  abogados:     {{MODEL_ARCHITECT}}    # constituciones y litigio de ownership
+  reviewer:     {{MODEL_REVIEWER}}     # veredictos + compliance matrix
+  implementer:  {{MODEL_IMPLEMENTER}}  # ejecución de tareas del DAG
+  qa:           {{MODEL_IMPLEMENTER}}  # ejercitar criterios de aceptación
+  mechanical:   {{MODEL_MECHANICAL}}   # digest, triage, commits, limpieza
+
+# Escalación: la aplica el COMANDO que orquesta (no es automática del
+# runtime). Regla dura: escalar modelo NUNCA sustituye escalar a humano
+# cuando el presupuesto de loop ({{LOOP_BUDGET}}) se agota.
+escalation:
+  implementer:
+    to: {{MODEL_ESCALATION}}
+    when:
+      - "2 veredictos fail consecutivos del reviewer en la misma tarea"
+      - "la tarea toca >1 lenguaje o migra un contrato proto"
+      - "el plan la marcó complexity: high"
+  reviewer:
+    to: {{MODEL_ARCHITECT}}
+    when:
+      - "el diff supera el presupuesto de review (~400 líneas) y no se pudo rebanar"
+
+# Cronjobs (headless: claude -p --model X --effort Y --max-budget-usd Z)
+# tier barato = detectar/redactar · medio = arreglar acotado · caro = escribir
+# tests/reglas nuevas (lo más difícil de hacer bien).
+cronjobs:
+  cheap:  { model: {{MODEL_MECHANICAL}}, effort: low }     # digest, doc-gardener, janitor, ratchet
+  medium: { model: {{MODEL_IMPLEMENTER}}, effort: medium } # ci-doctor, dep-shepherd, vuln-watch, dead-code, slo-watchdog
+  expensive: { model: {{MODEL_ESCALATION}}, effort: high } # mutation-sentinel, rule-miner, flake-fix
+
+# Presupuestos por invocación headless (USD). El cron-runner los pasa
+# como --max-budget-usd y registra el gasto real en el ledger.
+budgets:
+  cheap: 1
+  medium: 3
+  expensive: 8
