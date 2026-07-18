@@ -46,7 +46,29 @@ func (m *Manager) remoteExec(step string, argv []string, stdin []byte, timeout t
 	if err != nil {
 		return nil, err
 	}
-	return herdr.Exec(ssh, argv, stdin, timeout, func(l string) { m.logs.Append(step, l) })
+	return herdr.Exec(ssh, argv, stdin, timeout, func(l string) {
+		if sshNoise(l) {
+			return
+		}
+		m.logs.Append(step, l)
+	})
+}
+
+// remoteExecQuiet — igual pero SIN loguear (validaciones dry_run: el tecleo
+// del usuario no debe ensuciar la bitácora del paso).
+func (m *Manager) remoteExecQuiet(argv []string, stdin []byte, timeout time.Duration) ([]byte, error) {
+	ssh, err := m.sshTarget()
+	if err != nil {
+		return nil, err
+	}
+	return herdr.Exec(ssh, argv, stdin, timeout, nil)
+}
+
+// sshNoise — avisos de plomería de ssh que no le dicen nada al usuario.
+func sshNoise(l string) bool {
+	return strings.Contains(l, "ControlSocket") ||
+		strings.Contains(l, "disabling multiplexing") ||
+		strings.HasPrefix(l, "Warning: Permanently added")
 }
 
 // remoteHarness corre `harness <args>` en el target.
@@ -94,23 +116,83 @@ func (m *Manager) ensureRemoteBinary(step string) error {
 
 // ── workspace remoto ──
 
+// shq — quoting POSIX para rutas dentro de scripts sh remotos.
+func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// remoteProbeDir — el dry_run remoto con sh PURO: validar una carpeta no
+// necesita el binario harness en el VPS (ese solo hace falta al continuar, y
+// ahí se auto-instala). Sin esto, cada tecleo del usuario disparaba un
+// `harness: command not found` rojo — el bug del primer intento real.
+func (m *Manager) remoteProbeDir(path string, confirmOutside bool) (any, int) {
+	// validación sintáctica local (las mismas reglas que normalizeWS,
+	// menos el home: ese es el del VPS y se resuelve allá)
+	if strings.Contains(path, "..") {
+		return map[string]any{"ok": false, "error": "la ruta no puede contener «..»"}, 400
+	}
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, "/") {
+		return map[string]any{"ok": false, "error": "la ruta debe ser absoluta (o empezar con ~/)"}, 400
+	}
+	script := `p=` + shq(path) + `
+case "$p" in "~") p="$HOME";; "~/"*) p="$HOME/${p#\~/}";; esac
+case "$p" in "$HOME"|"$HOME"/*) in_home=1;; *) in_home=0;; esac
+norm=$p
+if [ -d "$p" ]; then
+  st=exists
+  [ -w "$p" ] && wr=1 || wr=0
+  [ -z "$(ls -A "$p" 2>/dev/null)" ] && emp=1 || emp=0
+  [ -f "$p/.harness-version" ] && inst=1 || inst=0
+else
+  st=absent; emp=1; inst=0
+  d=$(dirname "$p"); while [ ! -d "$d" ] && [ "$d" != "/" ]; do d=$(dirname "$d"); done
+  [ -w "$d" ] && wr=1 || wr=0
+fi
+echo "PROBE|$norm|$st|$wr|$emp|$inst|$in_home"`
+	out, err := m.remoteExecQuiet([]string{"sh", "-c", script}, nil, 15*time.Second)
+	if err != nil {
+		return map[string]any{"ok": false, "error": "no pude hablar con el VPS: " + err.Error()}, 502
+	}
+	var norm string
+	var exists, writable, empty, installed, inHome bool
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "PROBE|") {
+			continue
+		}
+		f := strings.Split(line, "|")
+		if len(f) != 7 {
+			continue
+		}
+		norm = f[1]
+		exists, writable, empty = f[2] == "exists", f[3] == "1", f[4] == "1"
+		installed, inHome = f[5] == "1", f[6] == "1"
+	}
+	if norm == "" {
+		return map[string]any{"ok": false, "error": "respuesta rara del VPS"}, 502
+	}
+	if !inHome && !confirmOutside {
+		return map[string]any{"ok": false, "error": "fuera del home del VPS — si es a propósito, confirma con confirm_outside_home"}, 400
+	}
+	if installed {
+		return map[string]any{"ok": false, "error": "ese workspace del VPS YA tiene un harness instalado"}, 409
+	}
+	return map[string]any{"ok": true, "normalized": norm,
+		"exists": exists, "writable": writable, "empty": empty}, 200
+}
+
 func (m *Manager) handleWorkspaceRemote(body map[string]any) (any, int) {
 	path := str(body, "path")
 	if path == "" {
 		return map[string]any{"ok": false, "error": "ruta vacía"}, 400
 	}
 	dry := boolv(body, "dry_run")
-	if !dry {
-		if err := m.ensureRemoteBinary("workspace"); err != nil {
-			return map[string]any{"ok": false, "error": err.Error()}, 502
-		}
+	if dry {
+		return m.remoteProbeDir(path, boolv(body, "confirm_outside_home"))
+	}
+	if err := m.ensureRemoteBinary("workspace"); err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, 502
 	}
 	args := []string{"init-step", "workspace", "--path", path, "--json"}
 	if boolv(body, "create") {
 		args = append(args, "--create")
-	}
-	if dry {
-		args = append(args, "--dry-run")
 	}
 	if boolv(body, "confirm_outside_home") {
 		args = append(args, "--confirm-outside-home")
@@ -123,12 +205,8 @@ func (m *Manager) handleWorkspaceRemote(body map[string]any) (any, int) {
 	if json.Unmarshal(out, &res) != nil {
 		return map[string]any{"ok": false, "error": "respuesta rara del VPS: " + strings.TrimSpace(string(out))}, 502
 	}
-	if dry || res["ok"] != true {
-		code := 200
-		if res["ok"] != true {
-			code = 400
-		}
-		return res, code
+	if res["ok"] != true {
+		return res, 400
 	}
 	norm, _ := res["workspace"].(string)
 	m.mu.Lock()

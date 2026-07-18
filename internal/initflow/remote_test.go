@@ -53,6 +53,46 @@ func harnessBin(t *testing.T) string {
 	return builtBin
 }
 
+// El dry_run remoto valida con sh PURO: debe funcionar aunque el "VPS" no
+// tenga harness (el bug del primer intento real: command not found por tecla).
+func TestRemoteDryRunSinBinario(t *testing.T) {
+	home := setupEnv(t)
+	sshStub(t)
+	// PATH mínimo: SIN harness (el VPS pelón)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	m := New("t", (&adoptSpy{}).fn)
+	m.SetTargetResolver(func(name string) (string, bool) { return "fake-vps", name == "corvux" })
+	if _, code := m.Handle("target", map[string]any{"name": "corvux"}); code != 200 {
+		t.Fatal("target")
+	}
+	res, code := m.Handle("workspace", map[string]any{"path": "~/nuevo-ws", "dry_run": true})
+	if code != 200 {
+		t.Fatalf("dry_run remoto sin binario debe funcionar: %d %v", code, res)
+	}
+	r := res.(map[string]any)
+	if r["exists"] != false || r["writable"] != true || r["normalized"] != filepath.Join(home, "nuevo-ws") {
+		t.Fatalf("probe: %v", r)
+	}
+	// ruta existente y con harness instalado → 409
+	inst := filepath.Join(home, "ya-instalado")
+	os.MkdirAll(inst, 0o755)
+	os.WriteFile(filepath.Join(inst, ".harness-version"), []byte("1\n"), 0o644)
+	if _, code := m.Handle("workspace", map[string]any{"path": "~/ya-instalado", "dry_run": true}); code != 409 {
+		t.Fatal("workspace remoto ya instalado → 409")
+	}
+	// fuera del home sin confirmar → 400; con confirmar → 200
+	if _, code := m.Handle("workspace", map[string]any{"path": "/tmp/x", "dry_run": true}); code != 400 {
+		t.Fatal("fuera de home sin confirmación")
+	}
+	if _, code := m.Handle("workspace", map[string]any{"path": "/tmp/x", "dry_run": true, "confirm_outside_home": true}); code != 200 {
+		t.Fatal("fuera de home confirmado")
+	}
+	// nada de esto ensució la bitácora del paso
+	if tail := m.Logs().Tail("workspace", 50); len(tail) != 0 {
+		t.Fatalf("el dry_run jamás loguea: %v", tail)
+	}
+}
+
 func TestE2ERemotoConStubSSH(t *testing.T) {
 	home := setupEnv(t)
 	sshStub(t)
