@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# El PANEL del harness (`make ui`). Prefiere el daemon Go (harnessd) — trae
-# multi-máquina (ver otras máquinas/VPS), terminales en vivo, sonda de MCP,
-# archivar, liveness honesta. Lo baja del release PRIVADO si falta (necesita
-# `gh` autenticado con acceso al repo). Si no puede, cae al panel Python
-# (server.py) — que funciona, pero sin esas features. Solo lectura, solo 127.0.0.1.
+# El PANEL del harness (`make ui`). Prefiere el daemon Go — trae multi-máquina,
+# terminales en vivo, sonda de MCP, archivar, liveness honesta y el wizard de
+# init. Orden: 1) `harness` instalado por brew (el camino canónico:
+# brew install andresgarcia29/agm/harness), 2) el binario local bajado de un
+# release, 3) el panel Python (server.py) — funciona, pero sin esas features.
+# Solo lectura, solo 127.0.0.1.
 set -euo pipefail
 PORT="${1:-7717}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VER="0.46.0"
 REPO="andresgarcia29/harness-daemon"
 BIN="$DIR/harnessd"
+
+# 1) el binario de brew: un solo gestor de versiones, cero descargas manuales
+if command -v harness >/dev/null 2>&1; then
+  opener=open; command -v xdg-open >/dev/null 2>&1 && opener=xdg-open
+  ( sleep 1.2; "$opener" "http://127.0.0.1:$PORT" >/dev/null 2>&1 || true ) &
+  exec harness run --port "$PORT" --workspace .
+fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"; case "$arch" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; esac

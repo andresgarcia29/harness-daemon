@@ -1,5 +1,5 @@
 {
-  "installer_commit": "108a3da1d05ae738b328216218d709558e3f728d",
+  "installer_commit": "f2921026af724bf9b6f7ea1ded7a7973a6a9825e",
   "files": {
     "catalog/capabilities.json": "41fe09afe07367e9106f9abd6b34f2bc3cd937ceb283e65b143e8a54a44ab6da",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
@@ -65,7 +65,7 @@
     "templates/scripts/worktree-task.sh": "b8f352fb35be0fdebcd9de337e13e91d91c3ee180fa5b7bdd63a4a6af02c6ca3",
     "templates/semgrep-rules.yaml.tmpl": "4d0baa41b5beabdbc1de1b5f1cb10020ac1db851da9b0b07bbacc024cb452bc4",
     "templates/settings.json.tmpl": "696c8ceeac7db3609ecbc0bd2226c919b8ed4becfd95772974386c4ea734f496",
-    "templates/ui/panel.sh": "b49416dcbf98eb356b4d40a8a95494f7da45e4b7ab5707190447f1eaa491c7f6",
+    "templates/ui/panel.sh": "014442ccdfef682939440be1ed12a9b1ace682ace45e0e82a67bf4f300630393",
     "templates/ui/pricing.json": "123bf4e6f3cf7f966bace7e9cf2c9bf29ad95b38e79a40e342423b2919229160",
     "templates/ui/server.py": "f3aa1e69a767e72b2ef771105bb4c140de562e400f3bc152848ee185db2385e7"
   }
