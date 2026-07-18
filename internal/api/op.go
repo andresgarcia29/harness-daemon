@@ -589,7 +589,9 @@ func (o *Op) OpHerdr(rw http.ResponseWriter, r *http.Request) {
 
 // OpHerdrKey — respuesta interactiva: manda teclas a un pane (contestar el
 // menú de un agente). El pane se valida contra el snapshot vivo; las teclas se
-// filtran a un set seguro (dígitos, y/n/s, Enter, flechas, Escape).
+// filtran a un set seguro (dígitos, y/n/s, Enter, flechas, Tab, Space,
+// Backspace, Escape y Ctrl-C) — suficiente para manejar un TUI de pantalla
+// completa (pickers, listas, editores) sin poder inyectar comandos.
 func (o *Op) OpHerdrKey(rw http.ResponseWriter, r *http.Request) {
 	b, ok := o.Guard(rw, r)
 	if !ok {
@@ -636,7 +638,8 @@ func (o *Op) OpHerdrKey(rw http.ResponseWriter, r *http.Request) {
 
 var okKeys = map[string]bool{
 	"Enter": true, "Escape": true, "Up": true, "Down": true, "Left": true, "Right": true,
-	"Tab": true, "Space": true, "y": true, "n": true, "s": true, "Y": true, "N": true,
+	"Tab": true, "Space": true, "Backspace": true, "C-c": true,
+	"y": true, "n": true, "s": true, "Y": true, "N": true,
 }
 
 func herdrKeyOK(k string) bool {
