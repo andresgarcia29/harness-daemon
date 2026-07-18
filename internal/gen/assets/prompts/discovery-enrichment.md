@@ -14,6 +14,14 @@ Tu trabajo — SOLO juicio, nada mecánico:
    mejores que `svc-<repo>` cuando el nombre del repo lo sugiera, y el campo
    `owns` (qué datos/dominio posee, una frase, leyendo los nombres de repos y
    señales — NO leas archivos).
+
+   **Regla de cobertura (obligatoria): TODO repo con rol `service` del
+   inventory debe aparecer en los `repos` de exactamente UN cluster.** Si el
+   nombre no te dice nada, crea igual `svc-<repo>` con `owns: "TBD — confirmar
+   con el equipo"` — omitir un servicio NO es una opción. Antes de responder,
+   recorre la lista de services del inventory y verifica que ninguno quedó
+   fuera; si dudaste de alguno, anótalo en `recommendations` con la clave
+   `coverage` y tu razón.
 2. **DAG**: orden de shipping por dependencias (infra → contracts → libraries
    → services → frontends). Corrige solo si los nombres sugieren dependencias
    claras entre servicios.

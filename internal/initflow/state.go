@@ -29,6 +29,7 @@ type StepState struct {
 	Status   Status   `json:"status"`
 	Detail   string   `json:"detail,omitempty"`
 	Error    string   `json:"error,omitempty"`
+	Started  int64    `json:"started,omitempty"` // epoch al pasar a running (la UI muestra el tiempo corriendo)
 	LogsTail []string `json:"logs_tail,omitempty"`
 }
 

@@ -64,7 +64,12 @@ func initStepCmd(args []string) int {
 			sel = append(sel, initflow.RepoSel{FullName: full, Ref: ref, Status: initflow.Pending})
 		}
 		fails, err := initflow.CloneRepos(abs, *source, sel, log,
-			func(i int, s initflow.Status, e string) { sel[i].Status, sel[i].Error = s, e })
+			func(i int, s initflow.Status, e string) {
+				sel[i].Status, sel[i].Error = s, e
+				// progreso estructurado por stderr: el orquestador LOCAL lo
+				// parsea y actualiza los checks por repo EN VIVO (no al final)
+				fmt.Fprintf(os.Stderr, "@@repo|%s|%s|%s\n", sel[i].FullName, s, strings.ReplaceAll(e, "\n", " "))
+			})
 		emit(map[string]any{"ok": err == nil, "repos": sel, "fails": fails})
 		if err != nil {
 			log("❌ " + err.Error())

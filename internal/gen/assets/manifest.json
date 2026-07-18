@@ -1,9 +1,9 @@
 {
-  "installer_commit": "2deb97e1f781b4d0643f6d6752a0e9ca038a6d8f",
+  "installer_commit": "f01823620faf7afcc38969ac406a68ad024da04b",
   "files": {
     "catalog/capabilities.json": "41fe09afe07367e9106f9abd6b34f2bc3cd937ceb283e65b143e8a54a44ab6da",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
-    "prompts/discovery-enrichment.md": "37203d31e728ff4dbff2170b5ed3c1b240c4b2140558677f8622f1a5a279d03c",
+    "prompts/discovery-enrichment.md": "e613f81e31e9ef128cb0968eacfee741a340377b6c0ca3912ff52cda08fe3b4a",
     "scripts/discover.sh": "b7bd46497d466c28a3b5336a0f504c3b7a8a268ee783012689cc5eb0902107bc",
     "scripts/doctor.sh": "ace29b9c1b42c734d39cf6e1c5e30a08eb02d909fd581af8c7399d6b43c1e06b",
     "templates/CLAUDE.md.tmpl": "0b5fc0e0b1da8cd00bb6ea0fe452ec57a7b3a49bde0b9ece36cb1c2fa98d60e5",

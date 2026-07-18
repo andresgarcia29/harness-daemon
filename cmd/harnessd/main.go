@@ -266,29 +266,36 @@ func openStore() (*store.Store, string, error) {
 //     selector de máquina muta TODA la página (tareas, sesiones, costo), no sólo
 //     las terminales. Si el VPS no responde harnessd, muestra vacío + warning
 //     (las terminales sí siguen, van por otro canal).
+// remoteSnapshot arma el snapshot COMPLETO de un target por SSH. También lo
+// usa el modo setup post-instalación remota: el harness vive en el VPS y el
+// panel local lo observa proxeado, sin workspace local (ADR-0011).
+func remoteSnapshot(tgt api.Target) *api.Snapshot {
+	hs := herdr.Remote(tgt.SSH).Snapshot() // las terminales del VPS
+	var snap *api.Snapshot
+	if raw, err := herdr.RemoteHarnessdSnapshot(tgt.SSH, tgt.Path); err == nil {
+		var s api.Snapshot
+		if json.Unmarshal(raw, &s) == nil {
+			snap = &s
+		}
+	}
+	if snap == nil {
+		snap = api.EmptySnapshot()
+		snap.Warning = "no pude traer los datos de «" + tgt.Name + "» — ¿harnessd instalado y corriendo en el VPS? (sus terminales sí funcionan)"
+	}
+	api.EnrichLiveness(snap, hs)
+	snap.Herdr = hs
+	snap.Targets = api.LoadTargets()
+	snap.TS = time.Now().Unix()
+	return snap
+}
+
 func buildSnapshot(r *http.Request, db *store.Store, w ident.Workspace) *api.Snapshot {
 	tgt, ok := api.ResolveTargetFull(r.URL.Query().Get("target"))
 	if !ok {
 		tgt = api.Target{} // destino desconocido → local
 	}
 	if tgt.SSH != "" {
-		hs := herdr.Remote(tgt.SSH).Snapshot() // las terminales del VPS
-		var snap *api.Snapshot
-		if raw, err := herdr.RemoteHarnessdSnapshot(tgt.SSH, tgt.Path); err == nil {
-			var s api.Snapshot
-			if json.Unmarshal(raw, &s) == nil {
-				snap = &s
-			}
-		}
-		if snap == nil {
-			snap = api.EmptySnapshot()
-			snap.Warning = "no pude traer los datos de «" + tgt.Name + "» — ¿harnessd instalado y corriendo en el VPS? (sus terminales sí funcionan)"
-		}
-		api.EnrichLiveness(snap, hs)
-		snap.Herdr = hs
-		snap.Targets = api.LoadTargets()
-		snap.TS = time.Now().Unix()
-		return snap
+		return remoteSnapshot(tgt)
 	}
 	// LOCAL
 	snap, err := api.Build(db, w.ID, w.Path, time.Now().Unix())
@@ -477,6 +484,10 @@ func run(port int, wsPath string, setup bool) int {
 		var snap *api.Snapshot
 		if w := wsVal.Load(); w != nil {
 			snap = buildSnapshot(r, st, *w)
+		} else if tgt, ok := api.ResolveTargetFull(r.URL.Query().Get("target")); ok && tgt.SSH != "" {
+			// sin workspace local pero mirando un VPS (instalación remota
+			// terminada): el panel proxea el snapshot del target
+			snap = remoteSnapshot(tgt)
 		} else {
 			snap = api.EmptySnapshot()
 			snap.TS = time.Now().Unix()
@@ -605,6 +616,7 @@ func run(port int, wsPath string, setup bool) int {
 	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
 	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
 	mux.HandleFunc("/api/op/sync-prices", opH((*api.Op).OpSyncPrices))
+	mux.HandleFunc("/api/op/ratify", opH((*api.Op).OpRatify))
 
 	// El plano de INIT (ADR-0011): el wizard de onboarding. Mismo Guard que
 	// operar (Host + token del HTML); la lógica vive en initflow.Manager.

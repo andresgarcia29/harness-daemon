@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/api"
@@ -230,6 +231,113 @@ func (m *Manager) handleMcpSecret(body map[string]any) (any, int) {
 		note = "fuente " + source + ": el valor NO se guardó aquí — regístralo en tu fuente; secrets.sh lo materializa"
 	}
 	return map[string]any{"ok": true, "verified": true, "stored": stored, "note": note, "tools": probe.Tools}, 200
+}
+
+// resolveSecret busca el valor de una clave en lo que YA existe: el .secrets
+// del workspace y el entorno del daemon. Es el "verifica tú mismo los que ya
+// traen secretos" — sin pedirle al humano lo que la máquina ya sabe.
+func (m *Manager) resolveSecret(key string) (string, bool) {
+	m.mu.Lock()
+	ws := m.st.Workspace
+	m.mu.Unlock()
+	if ws != "" {
+		if b, err := os.ReadFile(filepath.Join(ws, ".secrets")); err == nil {
+			for _, line := range strings.Split(string(b), "\n") {
+				if v, ok := strings.CutPrefix(line, key+"="); ok && strings.TrimSpace(v) != "" {
+					return strings.TrimSpace(v), true
+				}
+			}
+		}
+	}
+	if v := os.Getenv(key); v != "" {
+		return v, true
+	}
+	return "", false
+}
+
+// handleProbeAll — sonda TODOS los MCPs del catálogo de un tiro: los que no
+// piden secreto directo, y los que sí SOLO si el secreto ya está resoluble
+// (.secrets/env) — esos quedan certificados sin pedirte nada; el resto se
+// queda esperando su secreto a mano.
+func (m *Manager) handleProbeAll(map[string]any) (any, int) {
+	if m.isRemote() {
+		return map[string]any{"ok": false, "error": "la sonda corre donde vive el harness — en remoto, desde el VPS"}, 400
+	}
+	caps, err := gen.Catalog()
+	if err != nil {
+		return map[string]any{"ok": false, "error": err.Error()}, 500
+	}
+	m.mu.Lock()
+	ws := m.st.Workspace
+	slug := ""
+	if m.st.Answers != nil {
+		slug = m.st.Answers.Project.Name
+	}
+	m.mu.Unlock()
+	type job struct {
+		cap gen.Capability
+		env map[string]string
+	}
+	var jobs []job
+	skipped := []string{}
+	for _, c := range caps {
+		if c.Provider != "mcp" || c.Config == nil || c.Phase == 2 {
+			continue
+		}
+		env := map[string]string{}
+		missing := false
+		for _, s := range c.Secrets {
+			if v, ok := m.resolveSecret(s.Key); ok {
+				env[s.Key] = v
+			} else {
+				missing = true
+			}
+		}
+		if missing {
+			skipped = append(skipped, c.Name)
+			continue
+		}
+		jobs = append(jobs, job{cap: c, env: env})
+	}
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for _, j := range jobs {
+		wg.Add(1)
+		go func(j job) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			args := make([]string, 0, len(j.cap.Config.Args))
+			for _, a := range j.cap.Config.Args {
+				args = append(args, strings.ReplaceAll(a, "{{PROJECT_SLUG}}", slug))
+			}
+			p := api.ProbeMcpCommand(ws, j.cap.Config.Command, args, j.env)
+			m.mu.Lock()
+			if m.st.McpProbes == nil {
+				m.st.McpProbes = map[string]McpProbeState{}
+			}
+			m.st.McpProbes[j.cap.Name] = McpProbeState{OK: p.OK, Ms: p.Ms, Tools: p.Tools, Error: p.Error}
+			if p.OK {
+				if m.st.SecretKeys == nil {
+					m.st.SecretKeys = map[string]bool{}
+				}
+				for k := range j.env {
+					m.st.SecretKeys[k] = true
+				}
+			}
+			m.mu.Unlock()
+			if p.OK {
+				m.logs.Append("mcps", "✓ "+j.cap.Name+" certificado ("+fmt.Sprint(len(p.Tools))+" tools)")
+			} else {
+				m.logs.Append("mcps", "○ "+j.cap.Name+": "+p.Error)
+			}
+		}(j)
+	}
+	wg.Wait()
+	m.mu.Lock()
+	m.persistLocked()
+	m.mu.Unlock()
+	return map[string]any{"ok": true, "probed": len(jobs), "waiting_secret": skipped}, 200
 }
 
 // handleProbeInit — sondar un MCP sin secreto (los que no lo necesitan).

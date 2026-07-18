@@ -127,6 +127,9 @@ type Snapshot struct {
 	// Init es el estado del wizard de onboarding (initflow.PublicState) cuando
 	// hay un init activo; `any` para no crear ciclo de imports con initflow.
 	Init any `json:"init,omitempty"`
+	// Drafts: la ley propuesta y sin firmar (constituciones, specs, map) —
+	// se ratifica desde el panel (OpRatify).
+	Drafts []DraftDoc `json:"drafts,omitempty"`
 }
 type wsInfo struct {
 	Name string `json:"name"`
@@ -169,6 +172,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
 		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
+		Drafts:  ListDrafts(wsPath),
 		Workspace: wsInfo{Path: wsPath}, ArchivedTasks: []string{},
 	}
 	for m, p := range prices {
