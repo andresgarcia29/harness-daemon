@@ -580,7 +580,17 @@
         "orquestador"
       ],
       "provider": "mcp",
-      "purpose": "Lectura de secretos + escritura SOLO del app-plane (policy dedicada; platform/infra denegados)"
+      "purpose": "Lectura de secretos + escritura SOLO del app-plane (policy dedicada; platform/infra denegados)",
+      "secrets": [
+        {
+          "key": "VAULT_ADDR",
+          "source": "env://VAULT_ADDR"
+        },
+        {
+          "key": "VAULT_TOKEN",
+          "source": "env://VAULT_TOKEN"
+        }
+      ]
     },
     {
       "category": "tracking",

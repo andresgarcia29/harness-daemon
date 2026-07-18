@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/andresgarcia29/harness-daemon/internal/api"
 	"github.com/andresgarcia29/harness-daemon/internal/gen"
+	"github.com/andresgarcia29/harness-daemon/internal/ident"
 )
 
 // ── paso mcps: el catálogo, secretos certificados por sonda, y tools ──
@@ -180,30 +182,23 @@ func (m *Manager) handleMcpSecret(body map[string]any) (any, int) {
 		return map[string]any{"ok": false, "error": "workspace no fijado"}, 409
 	}
 
-	// certificar: el MCP debe contestar el handshake con el secreto puesto
-	args := make([]string, 0, len(cap.Config.Args))
-	for _, a := range cap.Config.Args {
-		args = append(args, strings.ReplaceAll(a, "{{PROJECT_SLUG}}", slug))
-	}
-	probe := api.ProbeMcpCommand(ws, cap.Config.Command, args, map[string]string{key: value})
+	// certificar: el MCP debe contestar el handshake con el secreto NUEVO
+	// puesto Y los demás que ya se resuelven solos (vault-mcp necesita
+	// ADDR+TOKEN juntos) — ProbeOneIn es el mismo código del VPS
+	probe, stored, perr := ProbeOneIn(ws, slug, name, key, value, source == "env")
 	m.mu.Lock()
 	if m.st.McpProbes == nil {
 		m.st.McpProbes = map[string]McpProbeState{}
 	}
-	m.st.McpProbes[name] = McpProbeState{OK: probe.OK, Ms: probe.Ms, Tools: probe.Tools, Error: probe.Error}
+	m.st.McpProbes[name] = probe
 	m.mu.Unlock()
+	if perr != nil {
+		return map[string]any{"ok": false, "error": perr.Error()}, 500
+	}
 	if !probe.OK {
 		m.logs.Append("mcps", "❌ "+name+": la sonda no contestó con ese secreto ("+probe.Error+")")
 		return map[string]any{"ok": false, "verified": false,
 			"error": "el MCP no contestó con ese secreto: " + probe.Error}, 400
-	}
-
-	stored := false
-	if source == "env" {
-		if err := upsertSecretsFile(filepath.Join(ws, ".secrets"), key, value); err != nil {
-			return map[string]any{"ok": false, "error": err.Error()}, 500
-		}
-		stored = true
 	}
 	m.mu.Lock()
 	if m.st.SecretKeys == nil {
@@ -233,8 +228,10 @@ func (m *Manager) handleMcpSecret(body map[string]any) (any, int) {
 	return map[string]any{"ok": true, "verified": true, "stored": stored, "note": note, "tools": probe.Tools}, 200
 }
 
-// ResolveSecretIn busca el valor de una clave en lo que YA existe: el
-// .secrets del workspace y el entorno. Standalone: lo usan el Manager local
+// ResolveSecretIn busca el valor de una clave en lo que YA existe — la
+// máquina no pregunta lo que ya sabe. Orden: .secrets del workspace → env →
+// fallbacks conocidos (el token de gh del paso GitHub, el vault-token del
+// bootstrap, el VAULT_ADDR de answers). Standalone: lo usan el Manager local
 // y `harness init-step probe-mcp` corriendo EN el VPS (mismo código allá).
 func ResolveSecretIn(ws, key string) (string, bool) {
 	if ws != "" {
@@ -248,6 +245,40 @@ func ResolveSecretIn(ws, key string) (string, bool) {
 	}
 	if v := os.Getenv(key); v != "" {
 		return v, true
+	}
+	switch key {
+	case "GITHUB_PERSONAL_ACCESS_TOKEN", "GH_TOKEN":
+		// el PAT que el paso GitHub guardó, o el gh CLI ya autenticado
+		if b, err := os.ReadFile(filepath.Join(ident.ConfigDir(), "github-token")); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v, true
+			}
+		}
+		bin := os.Getenv("HARNESS_GH_BIN")
+		if bin == "" {
+			bin = "gh"
+		}
+		if path, err := exec.LookPath(bin); err == nil {
+			if out, err := exec.Command(path, "auth", "token").Output(); err == nil {
+				if v := strings.TrimSpace(string(out)); v != "" {
+					return v, true
+				}
+			}
+		}
+	case "VAULT_TOKEN":
+		if b, err := os.ReadFile(filepath.Join(ident.ConfigDir(), "vault-token")); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v, true
+			}
+		}
+	case "VAULT_ADDR":
+		if ws != "" {
+			if raw, err := os.ReadFile(filepath.Join(ws, "harness-answers.yaml")); err == nil {
+				if a, err := gen.ParseAnswersYAML(raw); err == nil && a.Secrets.VaultAddr != "" {
+					return a.Secrets.VaultAddr, true
+				}
+			}
+		}
 	}
 	return "", false
 }
