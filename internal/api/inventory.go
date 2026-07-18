@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
 type cmdDoc struct {
@@ -401,7 +403,7 @@ func BuildTaskGit(ws, taskID string) TaskGit {
 }
 
 // TaskEvents: TODOS los eventos del bus de una tarea, desde SQLite.
-func TaskEvents(db *sql.DB, wsID, taskID string) []event {
+func TaskEvents(db store.Queryer, wsID, taskID string) []event {
 	out := []event{}
 	if strings.ContainsAny(taskID, `/\`) {
 		return out

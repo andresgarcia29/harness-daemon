@@ -11,6 +11,8 @@ package api
 import (
 	"database/sql"
 	"time"
+
+	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
 const activeWindow = 90 // s sin actividad → ya no "activo"
@@ -156,7 +158,7 @@ func EmptySnapshot() *Snapshot {
 
 // Build arma el snapshot de UN workspace desde el store. wsPath es la ruta
 // local del workspace (para Docs/Skills, que se leen de sus archivos).
-func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error) {
+func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, error) {
 	prices, _ := loadPrices(db)
 	snap := &Snapshot{
 		TS: now, Mode: "daemon", Op: true,
@@ -431,7 +433,7 @@ func short(s string) string {
 	return s
 }
 
-func loadPrices(db *sql.DB) (map[string]price, error) {
+func loadPrices(db store.Queryer) (map[string]price, error) {
 	out := map[string]price{}
 	rows, err := db.Query(`SELECT model, input, output,
 		COALESCE(cache_read,0), COALESCE(cache_write_5m,0), COALESCE(cache_write_1h,0)

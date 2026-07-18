@@ -30,7 +30,7 @@ var builtinPrices = []struct {
 // para siempre. Idempotente: se llama en cada arranque.
 func (s *Store) SeedBuiltinPrices() error {
 	for _, p := range builtinPrices {
-		_, err := s.DB.Exec(`
+		_, err := s.Exec(`
 			INSERT INTO prices (model, speed, valid_from, provider, input, output,
 			                    cache_read, cache_write_5m, cache_write_1h, source)
 			VALUES (?,'standard',0,'anthropic',?,?,?,?,?,'builtin')
@@ -54,7 +54,7 @@ type CostSummary struct {
 
 func (s *Store) Costs() (CostSummary, error) {
 	var c CostSummary
-	err := s.DB.QueryRow(`
+	err := s.QueryRow(`
 		SELECT COALESCE(SUM(cost_usd), 0),
 		       COALESCE(SUM(priced), 0),
 		       COALESCE(SUM(1 - priced), 0)
