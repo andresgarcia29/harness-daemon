@@ -35,7 +35,10 @@ func targetsPath() string { return filepath.Join(ident.ConfigDir(), "targets.jso
 // Por eso lo restringimos a un charset seguro y prohibimos el guion inicial.
 var (
 	reTargetName = regexp.MustCompile(`^[A-Za-z0-9 ._-]{1,40}$`)
-	reTargetSSH  = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,120}$`)
+	// destino: alias de ~/.ssh/config, user@host, o URI ssh://user@host:puerto
+	// (la forma nativa de OpenSSH para puerto custom — el :puerto SOLO vale
+	// con el prefijo ssh://, que es como ssh lo interpreta).
+	reTargetSSH = regexp.MustCompile(`^(ssh://[A-Za-z0-9._@-]{1,120}(:[0-9]{1,5})?|[A-Za-z0-9._@-]{1,120})$`)
 )
 
 func validTargetName(n string) bool { return reTargetName.MatchString(n) }

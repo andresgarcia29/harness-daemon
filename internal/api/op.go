@@ -699,8 +699,17 @@ func (o *Op) OpTargets(rw http.ResponseWriter, r *http.Request) {
 		p := herdr.Remote(ssh).Probe()
 		writeJSON(rw, 200, map[string]any{"ok": true, "probe": map[string]any{
 			"reachable": p.Reachable, "ssh_ok": p.SSHOK, "running": p.Running, "message": p.Message}})
+	case "install-key":
+		// VPS virgen que aún pide contraseña: instala TU llave pública usando
+		// la contraseña UNA vez (env del ssh, jamás argv/disco/logs). Después
+		// todo es llave, como siempre.
+		if err := InstallSSHKey(strings.TrimSpace(s(b, "ssh")), s(b, "password")); err != nil {
+			fail(rw, 400, err.Error())
+			return
+		}
+		writeJSON(rw, 200, map[string]any{"ok": true})
 	default:
-		fail(rw, 400, "acción desconocida (add|remove|status|test)")
+		fail(rw, 400, "acción desconocida (add|remove|status|test|install-key)")
 	}
 }
 
