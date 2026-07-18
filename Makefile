@@ -5,8 +5,9 @@ LDFLAGS := -X main.Version=$(VERSION)
 help: ## esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-build: ## compila para esta máquina
-	@go build -ldflags "$(LDFLAGS)" -o bin/harnessd ./cmd/harnessd
+build: ## compila para esta máquina (bin/harness + symlink harnessd)
+	@go build -ldflags "$(LDFLAGS)" -o bin/harness ./cmd/harnessd
+	@ln -sf harness bin/harnessd
 
 test: ## vet + tests
 	@go vet ./... && go test ./...

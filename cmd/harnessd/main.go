@@ -34,15 +34,33 @@ var Version = "dev"
 const defaultPort = 7718
 
 func main() {
-	if len(os.Args) < 2 {
+	args := os.Args[1:]
+	if len(args) < 1 {
 		usage()
 		os.Exit(2)
 	}
-	cmd := os.Args[1]
+	cmd := args[0]
+	rest := args[1:]
+	// `harness daemon <sub>` es el namespace explícito del set legacy
+	// (run/ensure/status/stop/…); los mismos verbos siguen vivos top-level.
+	if cmd == "daemon" {
+		if len(rest) < 1 {
+			usage()
+			os.Exit(2)
+		}
+		cmd, rest = rest[0], rest[1:]
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
-	port := fs.Int("port", defaultPort, "puerto (solo 127.0.0.1)")
+	// port=0 significa "no especificado": los comandos del daemon caen a 7718
+	// (legacy) y los del panel resuelven por config.json → 7180 (ADR-0011).
+	port := fs.Int("port", 0, "puerto (solo 127.0.0.1)")
 	ws := fs.String("workspace", ".", "workspace a observar")
-	_ = fs.Parse(os.Args[2:])
+	noOpen := fs.Bool("no-open", false, "no abrir el navegador")
+	_ = fs.Parse(rest)
+	dport := *port
+	if dport == 0 {
+		dport = defaultPort
+	}
 
 	switch cmd {
 	case "version":
@@ -50,15 +68,19 @@ func main() {
 	case "selftest":
 		os.Exit(selftest())
 	case "ensure":
-		os.Exit(ensure(*port, *ws))
+		os.Exit(ensure(dport, *ws))
 	case "run":
-		os.Exit(run(*port, *ws))
+		os.Exit(run(dport, *ws))
 	case "snapshot":
 		os.Exit(snapshotCmd(*ws))
 	case "status":
-		os.Exit(status(*port))
+		os.Exit(status(dport))
 	case "stop":
-		os.Exit(stop(*port))
+		os.Exit(stop(dport))
+	case "ui":
+		os.Exit(uiCmd(*port, *ws, *noOpen))
+	case "config":
+		os.Exit(configCmd(fs.Args()))
 	default:
 		usage()
 		os.Exit(2)
@@ -66,18 +88,25 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `harnessd — observa el trabajo de los agentes. Solo lectura, solo local.
+	fmt.Fprint(os.Stderr, `harness — el harness de ingeniería agéntica. Panel solo-local, solo 127.0.0.1.
 
-  harnessd ensure     arranca si no hay ninguno (idempotente — diez sesiones,
+Panel:
+  harness ui          asegura el daemon y abre el panel (puerto: --port >
+                      config.json > 7180)
+  harness config      muestra la config · harness config set ui_port <n>
+
+Daemon (también bajo el namespace «harness daemon <cmd>»):
+  harness ensure      arranca si no hay ninguno (idempotente — diez sesiones,
                       un daemon: gana quien logre el bind del puerto)
-  harnessd run        arranca en primer plano
-  harnessd status     pregunta quién tiene el puerto
-  harnessd stop       lo para
-  harnessd version    versión
-  harnessd selftest   verificación de arranque (la usa el updater ANTES de
+  harness run         arranca en primer plano
+  harness status      pregunta quién tiene el puerto
+  harness stop        lo para
+  harness version     versión
+  harness selftest    verificación de arranque (la usa el updater ANTES de
                       cambiar el binario: si esto falla, no hay swap)
+  harness snapshot    imprime el snapshot del workspace como JSON
 
-Flags: --port (7718) --workspace (.)
+Flags: --port (daemon: 7718 · panel: 7180) --workspace (.) --no-open
 `)
 }
 
