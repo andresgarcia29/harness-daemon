@@ -12,6 +12,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -26,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "github.com/lib/pq" // driver Postgres (validar DSN); registra "postgres"
 
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
@@ -369,7 +372,7 @@ func (o *Op) OpConnect(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prov, token := s(b, "provider"), s(b, "token")
-	if prov != "linear" && prov != "openrouter" {
+	if prov != "linear" && prov != "openrouter" && prov != "postgres" {
 		fail(rw, 400, "proveedor desconocido")
 		return
 	}
@@ -377,25 +380,34 @@ func (o *Op) OpConnect(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 400, "falta el token")
 		return
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	var req *http.Request
-	if prov == "linear" {
-		req, _ = http.NewRequest("POST", LinearURL, strings.NewReader(`{"query":"{ viewer { id } }"}`))
-		req.Header.Set("Authorization", token)
-		req.Header.Set("Content-Type", "application/json")
+	// Postgres: el "token" es el DSN; se valida abriendo una conexión y haciendo
+	// ping (no HTTP). Guardarlo deja listo el almacén central para el modo nube.
+	if prov == "postgres" {
+		if err := pingPostgres(token); err != nil {
+			fail(rw, 400, "no pude conectar a Postgres: "+redact.Clip(err.Error(), 140))
+			return
+		}
 	} else {
-		req, _ = http.NewRequest("GET", OpenRouterKey, nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		fail(rw, 400, "no pude llegar a "+prov)
-		return
-	}
-	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		fail(rw, 400, fmt.Sprintf("token inválido (%s devolvió %d)", prov, resp.StatusCode))
-		return
+		client := &http.Client{Timeout: 10 * time.Second}
+		var req *http.Request
+		if prov == "linear" {
+			req, _ = http.NewRequest("POST", LinearURL, strings.NewReader(`{"query":"{ viewer { id } }"}`))
+			req.Header.Set("Authorization", token)
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req, _ = http.NewRequest("GET", OpenRouterKey, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			fail(rw, 400, "no pude llegar a "+prov)
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			fail(rw, 400, fmt.Sprintf("token inválido (%s devolvió %d)", prov, resp.StatusCode))
+			return
+		}
 	}
 	dir := ident.ConfigDir()
 	_ = os.MkdirAll(dir, 0o700)
@@ -406,10 +418,23 @@ func (o *Op) OpConnect(rw http.ResponseWriter, r *http.Request) {
 	writeJSON(rw, 200, map[string]any{"ok": true, "provider": prov, "connected": true})
 }
 
+// pingPostgres valida un DSN abriendo la conexión y haciendo ping (10s). No
+// escribe nada: sólo confirma que Postgres responde con esas credenciales.
+func pingPostgres(dsn string) error {
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return db.PingContext(ctx)
+}
+
 // Connections: presencia de tokens (bool), jamás el valor.
 func Connections() map[string]bool {
 	out := map[string]bool{}
-	for _, p := range []string{"linear", "openrouter"} {
+	for _, p := range []string{"linear", "openrouter", "postgres"} {
 		_, err := os.Stat(filepath.Join(ident.ConfigDir(), p+"-token"))
 		out[p] = err == nil
 	}
