@@ -20,6 +20,10 @@ import (
 type Target struct {
 	Name string `json:"name"`
 	SSH  string `json:"ssh"`
+	// Path del workspace del harness EN el VPS (para `harnessd snapshot
+	// --workspace <path>`). El workspaceID es el mismo en ambas máquinas (se
+	// deriva del git remote), sólo cambia la ruta. Opcional.
+	Path string `json:"path,omitempty"`
 }
 
 var targetsMu sync.Mutex
@@ -37,6 +41,19 @@ var (
 func validTargetName(n string) bool { return reTargetName.MatchString(n) }
 func validTargetSSH(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "-") && reTargetSSH.MatchString(s)
+}
+
+// validTargetPath: ruta del workspace remoto. Vacía = ok (usa el default del
+// harnessd remoto). Si se da, debe ser absoluta o ~, sin ".." ni guion inicial
+// (va quoteada al ssh, pero validamos para no meter flags a harnessd).
+func validTargetPath(p string) bool {
+	if p == "" {
+		return true
+	}
+	if strings.HasPrefix(p, "-") || strings.Contains(p, "..") {
+		return false
+	}
+	return (strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~")) && !strings.ContainsAny(p, "\n\r")
 }
 
 // LoadTargets lee la lista (vacía si no hay archivo). Nunca falla ruidoso.
@@ -76,15 +93,19 @@ func saveTargetsLocked(ts []Target) error {
 	return os.Rename(tmp, targetsPath())
 }
 
-// AddTarget agrega/actualiza un target (por nombre). Valida nombre y ssh.
-func AddTarget(name, ssh string) error {
+// AddTarget agrega/actualiza un target (por nombre). Valida nombre, ssh y path.
+func AddTarget(name, ssh, path string) error {
 	name = strings.TrimSpace(name)
 	ssh = strings.TrimSpace(ssh)
+	path = strings.TrimSpace(path)
 	if !validTargetName(name) {
 		return fmt.Errorf("nombre inválido (letras, números, espacio, . _ - ; máx 40)")
 	}
 	if !validTargetSSH(ssh) {
 		return fmt.Errorf("destino SSH inválido (usa un alias de ~/.ssh/config o user@host, sin espacios)")
+	}
+	if !validTargetPath(path) {
+		return fmt.Errorf("ruta del workspace inválida (debe ser absoluta o ~, sin ..)")
 	}
 	targetsMu.Lock()
 	defer targetsMu.Unlock()
@@ -92,11 +113,11 @@ func AddTarget(name, ssh string) error {
 	found := false
 	for i := range ts {
 		if ts[i].Name == name {
-			ts[i].SSH, found = ssh, true
+			ts[i].SSH, ts[i].Path, found = ssh, path, true
 		}
 	}
 	if !found {
-		ts = append(ts, Target{Name: name, SSH: ssh})
+		ts = append(ts, Target{Name: name, SSH: ssh, Path: path})
 	}
 	return saveTargetsLocked(ts)
 }
@@ -130,4 +151,19 @@ func ResolveTarget(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ResolveTargetFull devuelve el Target completo (ssh + path) por nombre. name
+// vacío/"local" → (zero, true) = esta máquina. Desconocido → (zero, false).
+func ResolveTargetFull(name string) (Target, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || name == "local" {
+		return Target{}, true
+	}
+	for _, t := range LoadTargets() {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return Target{}, false
 }

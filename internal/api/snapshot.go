@@ -141,6 +141,19 @@ func costOf(p price, u usage, ok bool) *float64 {
 	return &c
 }
 
+// EmptySnapshot devuelve un snapshot vacío pero con todas las listas/mapas
+// inicializados (el frontend nunca ve null). Para el fallback cuando no se pudo
+// traer el snapshot de un VPS — muestra vacío + un warning, no rompe la vista.
+func EmptySnapshot() *Snapshot {
+	return &Snapshot{
+		Mode: "daemon", Op: true,
+		Sessions: []session{}, Events: []event{}, Tasks: []task{},
+		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
+		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
+		Mcp: []McpServer{}, ArchivedTasks: []string{}, Targets: []Target{},
+	}
+}
+
 // Build arma el snapshot de UN workspace desde el store. wsPath es la ruta
 // local del workspace (para Docs/Skills, que se leen de sus archivos).
 func Build(db *sql.DB, workspaceID, wsPath string, now int64) (*Snapshot, error) {
