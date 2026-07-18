@@ -367,12 +367,37 @@ func run(port int, wsPath string) int {
 		}
 		rw.Header().Set("Content-Type", "application/json")
 		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
-		txt, err := herdr.Remote(ssh).PaneRead(r.URL.Query().Get("id"), 200, r.URL.Query().Get("fmt"))
+		id := r.URL.Query().Get("id")
+		txt, err := herdr.Remote(ssh).PaneRead(id, 200, r.URL.Query().Get("fmt"))
 		if err != nil {
 			_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no pude leer el pane"})
 			return
 		}
+		herdr.AccumulateVisible(ssh, id, txt) // backlog para shells (ruta B)
 		_ = json.NewEncoder(rw).Encode(map[string]string{"text": txt})
+	})
+	// Historial COMPLETO de una terminal: si el pane corre un agente (Claude
+	// Code…), su transcripción JSONL real por session id (ruta A); si es un shell,
+	// el backlog de pantalla acumulado (ruta B). "Siempre tener todo".
+	mux.HandleFunc("/api/herdr/history", func(rw http.ResponseWriter, r *http.Request) {
+		if !api.GuardRead(rw, r) {
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		ssh, _ := api.ResolveTarget(r.URL.Query().Get("target"))
+		pane := r.URL.Query().Get("pane")
+		session := r.URL.Query().Get("session")
+		kind := "backlog"
+		var txt string
+		if session != "" {
+			if t, _ := herdr.Remote(ssh).Transcript(session); t != "" {
+				txt, kind = t, "transcript"
+			}
+		}
+		if txt == "" {
+			txt = herdr.Backlog(ssh, pane)
+		}
+		_ = json.NewEncoder(rw).Encode(map[string]string{"text": txt, "kind": kind})
 	})
 
 	// El build de React (embebido). Va AL FINAL: solo atrapa lo que no matchea
