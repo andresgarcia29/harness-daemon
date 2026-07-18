@@ -24,14 +24,24 @@ import (
 )
 
 type Pane struct {
-	PaneID        string `json:"pane_id"`
-	WorkspaceID   string `json:"workspace_id"`
-	TabID         string `json:"tab_id"`
-	Cwd           string `json:"cwd"`
-	ForegroundCwd string `json:"foreground_cwd"`
-	AgentStatus   string `json:"agent_status"`
-	Focused       bool   `json:"focused"`
-	Program       string `json:"program,omitempty"` // "Claude Code" | "Kimi" | … detectado
+	PaneID        string      `json:"pane_id"`
+	WorkspaceID   string      `json:"workspace_id"`
+	TabID         string      `json:"tab_id"`
+	Cwd           string      `json:"cwd"`
+	ForegroundCwd string      `json:"foreground_cwd"`
+	AgentStatus   string      `json:"agent_status"`
+	Focused       bool        `json:"focused"`
+	Program       string      `json:"program,omitempty"`       // "Claude Code" | "Kimi" | … detectado
+	Agent         string      `json:"agent,omitempty"`         // "claude" | "codex" | … (de herdr)
+	AgentSession  *SessionRef `json:"agent_session,omitempty"` // id de la sesión del agente → su transcripción
+}
+
+// SessionRef es el ancla a la transcripción del agente (el JSONL de Claude Code
+// vive por este id). Nos deja mostrar la conversación COMPLETA, no la pantalla.
+type SessionRef struct {
+	Agent string `json:"agent,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 type Tab struct {
 	TabID       string `json:"tab_id"`
