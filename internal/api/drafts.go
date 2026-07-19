@@ -64,6 +64,51 @@ func ListDrafts(ws string) []DraftDoc {
 	return out
 }
 
+// LawDoc — un documento de la ley con su estado, ratificado o no: el visor
+// no desaparece al firmar ("no quites que pueda ver los docs").
+type LawDoc struct {
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	Title  string `json:"title"`
+	Status string `json:"status"` // draft | ratified | plain (sin frontmatter de status)
+	Agent  string `json:"agent,omitempty"` // cluster re-excavable (svc-*)
+}
+
+// ListLawDocs — TODA la ley existente, con estado.
+func ListLawDocs(ws string) []LawDoc {
+	if ws == "" {
+		return nil
+	}
+	var out []LawDoc
+	for _, c := range draftCandidates(ws) {
+		abs := filepath.Join(ws, c.Path)
+		b, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		head := b
+		if len(head) > 2048 {
+			head = head[:2048]
+		}
+		status := "plain"
+		if strings.Contains(string(head), "status: DRAFT") {
+			status = "draft"
+		} else if strings.Contains(string(head), "status: RATIFIED") {
+			status = "ratified"
+		}
+		agent := ""
+		switch {
+		case c.Kind == "abogado" && strings.HasPrefix(filepath.Base(c.Path), "svc-"):
+			agent = strings.TrimSuffix(filepath.Base(c.Path), ".md")
+		case c.Kind == "spec":
+			agent = "svc-" + filepath.Base(filepath.Dir(c.Path))
+		}
+		out = append(out, LawDoc{Path: c.Path, Kind: c.Kind, Title: c.Title, Status: status, Agent: agent})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
 func isDraft(abs string) bool {
 	b, err := os.ReadFile(abs)
 	if err != nil {
