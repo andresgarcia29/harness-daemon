@@ -164,6 +164,31 @@ func EmptySnapshot() *Snapshot {
 	}
 }
 
+// loadRuns — la PROCEDENCIA de cada sesión (<ws>/.harness/runs.jsonl): qué
+// tarea/paso la lanzó y de qué tipo es (auto | one-shot). El panel Python lo
+// leía; al portar a Go quedó solo el writer — por eso las sesiones headless
+// se veían huérfanas. Últimas 500 entradas.
+func loadRuns(ws string) []map[string]any {
+	out := []map[string]any{}
+	b, err := os.ReadFile(filepath.Join(ws, ".harness", "runs.jsonl"))
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) == nil {
+			out = append(out, m)
+		}
+	}
+	if len(out) > 500 {
+		out = out[len(out)-500:]
+	}
+	return out
+}
+
 // Build arma el snapshot de UN workspace desde el store. wsPath es la ruta
 // local del workspace (para Docs/Skills, que se leen de sus archivos).
 func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, error) {
@@ -172,7 +197,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		TS: now, Mode: "daemon", Op: true,
 		Sessions: []session{}, Events: []event{}, Tasks: []task{},
 		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
-		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
+		Unpriced: []string{}, Runs: loadRuns(wsPath), Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
 		Drafts:  ListDrafts(wsPath), Law: ListLawDocs(wsPath),
 		Workspace: wsInfo{Path: wsPath}, ArchivedTasks: []string{},
