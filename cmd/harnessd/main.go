@@ -69,6 +69,8 @@ func main() {
 		os.Exit(updateCmd(rest))
 	case "init-step":
 		os.Exit(initStepCmd(rest))
+	case "ratify":
+		os.Exit(ratifyCmd(rest))
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	// port=0 significa "no especificado": los comandos del daemon caen a 7718
@@ -616,7 +618,15 @@ func run(port int, wsPath string, setup bool) int {
 	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
 	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
 	mux.HandleFunc("/api/op/sync-prices", opH((*api.Op).OpSyncPrices))
-	mux.HandleFunc("/api/op/ratify", opH((*api.Op).OpRatify))
+	// ratify funciona SIN workspace local cuando apunta a un target (la firma
+	// corre en el VPS por ssh): cae a authOp en modo setup
+	mux.HandleFunc("/api/op/ratify", func(rw http.ResponseWriter, r *http.Request) {
+		o := opPtr.Load()
+		if o == nil {
+			o = authOp
+		}
+		o.OpRatify(rw, r)
+	})
 
 	// El plano de INIT (ADR-0011): el wizard de onboarding. Mismo Guard que
 	// operar (Host + token del HTML); la lógica vive en initflow.Manager.

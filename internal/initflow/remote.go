@@ -137,8 +137,10 @@ func (m *Manager) ensureRemoteBinary(step string) error {
 		rel = "download/v" + m.version // la MISMA versión que el orquestador local
 	}
 	url := fmt.Sprintf("https://github.com/andresgarcia29/harness-daemon/releases/%s/harnessd-%s-%s", rel, osName, arch)
+	// harnessd symlink: el panel remoto (herdr snapshot) invoca `harnessd` —
+	// un harnessd viejo suelto en el PATH serviría snapshots sin campos nuevos
 	script := `mkdir -p "$HOME/.local/bin" && curl -fsSL -o "$HOME/.local/bin/harness" ` + url +
-		` && chmod +x "$HOME/.local/bin/harness" && "$HOME/.local/bin/harness" version`
+		` && chmod +x "$HOME/.local/bin/harness" && ln -sf "$HOME/.local/bin/harness" "$HOME/.local/bin/harnessd" && "$HOME/.local/bin/harness" version`
 	if out, err := m.remoteExec(step, []string{"sh", "-c", script}, nil, 2*time.Minute); err != nil {
 		return fmt.Errorf("no pude instalar harness en el VPS (%v) — instálalo tú: brew install andresgarcia29/agm/harness, o baja %s a ~/.local/bin/harness", err, url)
 	} else {

@@ -1,12 +1,16 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 )
 
 // ── los DRAFT: la ley que la arqueología propuso y nadie ha firmado ──
@@ -77,6 +81,42 @@ func isDraft(abs string) bool {
 func (o *Op) OpRatify(rw http.ResponseWriter, r *http.Request) {
 	b, ok := o.Guard(rw, r)
 	if !ok {
+		return
+	}
+	// mirando un VPS (el op() del panel inyecta target): la firma corre ALLÁ
+	// por ssh — mismo código (harness ratify), misma ley
+	if tname := s(b, "target"); tname != "" {
+		tgt, okk := ResolveTargetFull(tname)
+		if !okk || tgt.SSH == "" {
+			fail(rw, 400, "target desconocido")
+			return
+		}
+		if tgt.Path == "" {
+			fail(rw, 400, "el target no tiene ruta de workspace configurada")
+			return
+		}
+		args := []string{"harness", "ratify", "--workspace", tgt.Path, "--json"}
+		if v, _ := b["all"].(bool); v {
+			args = append(args, "--all")
+		} else {
+			p := s(b, "path")
+			if p == "" {
+				fail(rw, 400, "falta path o all")
+				return
+			}
+			args = append(args, "--path", p)
+		}
+		out, err := herdr.Exec(tgt.SSH, args, nil, 60*time.Second, nil)
+		var res map[string]any
+		if json.Unmarshal(out, &res) != nil {
+			if err != nil {
+				fail(rw, 502, "VPS: "+err.Error())
+				return
+			}
+			fail(rw, 502, "respuesta rara del VPS")
+			return
+		}
+		writeJSON(rw, 200, res)
 		return
 	}
 	if o.WS == "" {
