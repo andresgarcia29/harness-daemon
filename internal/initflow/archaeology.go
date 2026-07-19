@@ -24,14 +24,19 @@ type ArchState struct {
 }
 
 // RunArchaeology excava los clusters de servicio de a. progress se llama con
-// cada transición (índice sobre la lista de servicios). Devuelve el estado
-// final por cluster y cuántos fallaron.
-func RunArchaeology(ws string, a *gen.Answers, version string, log func(string), progress func(i int, st ArchState)) ([]ArchState, int) {
+// cada transición (índice sobre la lista de servicios). only != "" excava
+// SOLO ese cluster (el botón Re-excavar del panel). Devuelve el estado final
+// por cluster y cuántos fallaron.
+func RunArchaeology(ws string, a *gen.Answers, version string, log func(string), progress func(i int, st ArchState), only string) ([]ArchState, int) {
 	var services []gen.Cluster
 	for _, c := range a.Clusters {
-		if c.Kind == "service" {
+		if c.Kind == "service" && (only == "" || c.Agent == only) {
 			services = append(services, c)
 		}
+	}
+	if only != "" && len(services) == 0 {
+		log("❌ no hay cluster de servicio llamado «" + only + "»")
+		return nil, 1
 	}
 	if len(services) == 0 {
 		log("sin clusters de servicio — nada que excavar")
@@ -116,7 +121,7 @@ func (m *Manager) runArchaeology() error {
 	m.mu.Unlock()
 	_, fails := RunArchaeology(ws, a, m.version,
 		func(s string) { m.logs.Append("archaeology", s) },
-		func(i int, st ArchState) { m.setArch(i, st) })
+		func(i int, st ArchState) { m.setArch(i, st) }, "")
 	if fails > 0 {
 		return fmt.Errorf("%d cluster(s) sin arqueología — reintenta o salta (los esqueletos DRAFT ya existen)", fails)
 	}

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -618,6 +620,66 @@ func run(port int, wsPath string, setup bool) int {
 	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
 	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
 	mux.HandleFunc("/api/op/sync-prices", opH((*api.Op).OpSyncPrices))
+	// re-excavar UN cluster (arqueología dirigida): el panel como controlador
+	// del harness — local por subproceso propio, remoto por ssh (mismo código:
+	// harness init-step archaeology --agent X). Síncrono: la UI muestra busy.
+	mux.HandleFunc("/api/op/excavate", func(rw http.ResponseWriter, r *http.Request) {
+		o := opPtr.Load()
+		if o == nil {
+			o = authOp
+		}
+		b, ok := o.Guard(rw, r)
+		if !ok {
+			return
+		}
+		agent, _ := b["agent"].(string)
+		if !regexp.MustCompile(`^[a-z0-9-]{1,40}$`).MatchString(agent) {
+			http.Error(rw, `{"ok":false,"error":"agente inválido"}`, 400)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		if tname, _ := b["target"].(string); tname != "" {
+			tgt, okk := api.ResolveTargetFull(tname)
+			if !okk || tgt.SSH == "" || tgt.Path == "" {
+				http.Error(rw, `{"ok":false,"error":"target sin workspace"}`, 400)
+				return
+			}
+			out, err := herdr.Exec(tgt.SSH,
+				[]string{"harness", "init-step", "archaeology", "--workspace", tgt.Path, "--agent", agent, "--json"},
+				nil, 10*time.Minute, nil)
+			var res map[string]any
+			if json.Unmarshal(out, &res) != nil {
+				msg := "respuesta rara del VPS"
+				if err != nil {
+					msg = "VPS: " + err.Error()
+				}
+				_ = json.NewEncoder(rw).Encode(map[string]any{"ok": false, "error": msg})
+				return
+			}
+			_ = json.NewEncoder(rw).Encode(res)
+			return
+		}
+		w := wsVal.Load()
+		if w == nil {
+			http.Error(rw, `{"ok":false,"error":"sin workspace local — elige una máquina"}`, 409)
+			return
+		}
+		selfExe, _ := os.Executable()
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, selfExe, "init-step", "archaeology",
+			"--workspace", w.Path, "--agent", agent, "--json").Output()
+		var res map[string]any
+		if json.Unmarshal(out, &res) != nil {
+			msg := "la arqueología no contestó"
+			if err != nil {
+				msg = err.Error()
+			}
+			_ = json.NewEncoder(rw).Encode(map[string]any{"ok": false, "error": msg})
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(res)
+	})
 	// el visor de la ley: leer un doc (local o del VPS) antes de firmarlo
 	mux.HandleFunc("/api/doc", func(rw http.ResponseWriter, r *http.Request) {
 		ws := ""

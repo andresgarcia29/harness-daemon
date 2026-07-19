@@ -479,5 +479,14 @@ func (m *Manager) remoteFinish(ws string) error {
 			m.logs.Append("finish", "✓ target «"+name+"» apunta al workspace nuevo — el selector de máquina ya lo observa")
 		}
 	}
+	// el daemon del VPS debe OBSERVAR el workspace nuevo: sin esto el panel
+	// proxeado sale vacío aunque /auto esté corriendo allá (la tarea fantasma
+	// de la primera instalación real — el daemon viejo miraba otro workspace)
+	_, _ = m.remoteHarness("finish", []string{"stop"}, nil, 20*time.Second)
+	if _, err := m.remoteHarness("finish", []string{"ensure", "--workspace", ws}, nil, 30*time.Second); err != nil {
+		m.logs.Append("finish", "⚠︎ no pude dejar el daemon del VPS observando el workspace ("+err.Error()+") — córrelo allá: harness ensure --workspace "+ws)
+	} else {
+		m.logs.Append("finish", "✓ daemon del VPS observando el workspace nuevo (tareas/sesiones en vivo en el panel)")
+	}
 	return nil
 }

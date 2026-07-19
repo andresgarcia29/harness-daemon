@@ -38,6 +38,7 @@ func initStepCmd(args []string) int {
 	name := fs.String("name", "", "probe-mcp: sondar UN MCP por nombre")
 	key := fs.String("key", "", "probe-mcp: clave del secreto (el VALOR llega por stdin)")
 	store := fs.Bool("store", false, "probe-mcp: persistir el secreto en <ws>/.secrets si la sonda contesta")
+	agent := fs.String("agent", "", "archaeology: excavar SOLO este cluster (svc-x)")
 	_ = fs.Bool("json", true, "resultado JSON en stdout (siempre)")
 	_ = fs.Parse(rest)
 	log := func(s string) { fmt.Fprintln(os.Stderr, s) }
@@ -94,7 +95,7 @@ func initStepCmd(args []string) int {
 			log("❌ answers: " + err.Error())
 			return 1
 		}
-		results, fails := initflow.RunArchaeology(abs, a, Version, log, func(int, initflow.ArchState) {})
+		results, fails := initflow.RunArchaeology(abs, a, Version, log, func(int, initflow.ArchState) {}, *agent)
 		emit(map[string]any{"ok": fails == 0, "results": results, "fails": fails})
 		if fails > 0 {
 			return 1
