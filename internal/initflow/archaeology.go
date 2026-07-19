@@ -79,6 +79,7 @@ func RunArchaeology(ws string, a *gen.Answers, version string, log func(string),
 			var f gen.ArchFinding
 			runner := newLLM(ws)
 			runner.Timeout = 8 * time.Minute
+			runner.Purpose = "arqueología · " + c.Agent
 			if err := runner.runJSON(prompt, &f, func(s string) { log(c.Agent + ": " + s) }); err != nil {
 				mu.Lock()
 				fails++

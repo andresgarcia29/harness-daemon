@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,8 @@ type llmRunner struct {
 	Bin     string
 	Timeout time.Duration
 	Dir     string
+	Purpose string // procedencia: "arqueología · svc-x" — sin esto la sesión
+	// aparece huérfana y "(sin texto)" en el panel (la queja real)
 }
 
 func newLLM(dir string) *llmRunner {
@@ -38,6 +41,37 @@ func newLLM(dir string) *llmRunner {
 		bin = "claude"
 	}
 	return &llmRunner{Bin: bin, Timeout: 5 * time.Minute, Dir: dir}
+}
+
+// newSessionID — uuid v4 (mismo formato que el plano de operar).
+func newSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// RecordRun — la procedencia de un run headless en <ws>/.harness/runs.jsonl
+// (el mismo registro que usan las tareas del panel): quién lanzó la sesión y
+// para qué. kind "one-shot" = corrió y terminó; el panel la etiqueta
+// «Terminada» en vez de «En reposo».
+func RecordRun(ws, purpose, session, kind string) {
+	if ws == "" || session == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Join(ws, ".harness"), 0o755)
+	f, err := os.OpenFile(filepath.Join(ws, ".harness", "runs.jsonl"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	b, _ := json.Marshal(map[string]any{"ts": time.Now().Unix(), "task": purpose,
+		"session": session, "kind": kind})
+	_, _ = f.Write(append(b, '\n'))
 }
 
 func clip(s string, n int) string {
@@ -84,9 +118,16 @@ func (r *llmRunner) runJSON(prompt string, out any, log func(string)) error {
 func (r *llmRunner) stream(path, prompt string, log func(string)) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
 	defer cancel()
+	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose"}
+	// session-id conocido + registro de procedencia: la sesión aparece en el
+	// panel con su propósito («arqueología · svc-x»), jamás huérfana
+	if sid := newSessionID(); sid != "" && r.Dir != "" {
+		args = append(args, "--session-id", sid)
+		RecordRun(r.Dir, defaultStr2(r.Purpose, "init · paso LLM"), sid, "one-shot")
+	}
 	log(fmt.Sprintf("$ %s -p «prompt %dKB» --output-format stream-json · timeout %s · cwd %s",
 		filepath.Base(path), (len(prompt)+1023)/1024, r.Timeout, defaultStr2(r.Dir, "(daemon)")))
-	cmd := exec.CommandContext(ctx, path, "-p", prompt, "--output-format", "stream-json", "--verbose")
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = r.Dir
 	cmd.Stdin = nil
 	var errb bytes.Buffer
@@ -284,8 +325,10 @@ func (m *Manager) runEnrich() error {
 	if m.isRemote() {
 		dir = ""
 	}
+	runner := newLLM(dir)
+	runner.Purpose = "init · enriquecimiento (clustering/DAG)"
 	var out enrichOut
-	if err := newLLM(dir).runJSON(prompt, &out, func(s string) { m.logs.Append("enrich", s) }); err != nil {
+	if err := runner.runJSON(prompt, &out, func(s string) { m.logs.Append("enrich", s) }); err != nil {
 		return fmt.Errorf("%v — puedes saltar este paso: los defaults deterministas ya están puestos", err)
 	}
 	m.mu.Lock()
