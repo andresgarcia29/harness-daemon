@@ -106,11 +106,17 @@ func TestE2ERemotoConStubSSH(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(localBin, "harness"), src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// claude stub (arqueología "remota")
+	// claude stub (arqueología "remota") + bins de capacidades sembradas
 	payload := `{\"owns\":\"dominio remoto\",\"not_owns\":\"nada\",\"invariants\":[\"i1\"],\"requirements\":[]}`
 	claude := filepath.Join(localBin, "claude")
 	if err := os.WriteFile(claude, []byte(fmt.Sprintf("#!/bin/sh\necho '{\"result\": \"%s\"}'\n", payload)), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, b := range []string{"go", "gitleaks", "semgrep", "ccusage", "go-arch-lint", "gh"} {
+		if err := os.WriteFile(filepath.Join(localBin, b),
+			[]byte("#!/bin/sh\necho "+b+" 1.0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("HARNESS_CLAUDE_BIN", claude)
 	t.Setenv("PATH", localBin+":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")

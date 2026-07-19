@@ -75,6 +75,21 @@ func generateCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "❌ falta %s/inventory.json — corre `harness discover --workspace %s` primero\n", abs, abs)
 		return 1
 	}
+	// auto-cura de instancias viejas: sin NINGUNA capacidad CLI en answers
+	// (el bug del bootstrap vacío), siembra las detectadas por señal
+	hasCLI := false
+	for _, c := range a.Capabilities {
+		if c.Bin != "" {
+			hasCLI = true
+		}
+	}
+	if !hasCLI {
+		seeded := gen.SeedCapabilities(inv)
+		if len(seeded) > 0 {
+			a.Capabilities = append(a.Capabilities, seeded...)
+			fmt.Fprintf(os.Stderr, "ℹ️  %d capacidades CLI sembradas del catálogo (toolchains, gitleaks, ccusage…) — el bootstrap las instalará\n", len(seeded))
+		}
+	}
 	rep, err := gen.Generate(a, inv, gen.Opts{WS: abs, Version: Version, Now: time.Now(), Force: *force, DryRun: *dry})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
