@@ -197,6 +197,20 @@ func writeFile(abs string, content []byte, mode os.FileMode) error {
 	return os.Chmod(abs, mode) // WriteFile no baja/sube bits si el archivo existía
 }
 
+// UpdateManifestSha registra que un archivo cambió por una transformación
+// SANCIONADA (ratificar, restamp): sigue siendo "nuestro" para la
+// idempotencia — sin esto, generate --update lo trataría como personalizado
+// y llenaría el workspace de .new.
+func UpdateManifestSha(ws, rel string, content []byte) {
+	m := loadGenManifest(ws)
+	if len(m) == 0 {
+		return // instancia sin manifest: nada que mantener
+	}
+	m[rel] = sha(content)
+	b, _ := json.MarshalIndent(m, "", "  ")
+	_ = writeFile(genManifestPath(ws), append(b, '\n'), 0o644)
+}
+
 // registerInstance — ConfigDir()/instances.json: la lista que `harness update`
 // recorre para ofrecer `generate --update` por instancia.
 func registerInstance(ws string) {

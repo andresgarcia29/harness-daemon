@@ -618,6 +618,14 @@ func run(port int, wsPath string, setup bool) int {
 	mux.HandleFunc("/api/op/probe-mcp", opH((*api.Op).OpProbeMcp))
 	mux.HandleFunc("/api/op/connect", opH((*api.Op).OpConnect))
 	mux.HandleFunc("/api/op/sync-prices", opH((*api.Op).OpSyncPrices))
+	// el visor de la ley: leer un doc (local o del VPS) antes de firmarlo
+	mux.HandleFunc("/api/doc", func(rw http.ResponseWriter, r *http.Request) {
+		ws := ""
+		if w := wsVal.Load(); w != nil {
+			ws = w.Path
+		}
+		api.DocHandler(ws)(rw, r)
+	})
 	// ratify funciona SIN workspace local cuando apunta a un target (la firma
 	// corre en el VPS por ssh): cae a authOp en modo setup
 	mux.HandleFunc("/api/op/ratify", func(rw http.ResponseWriter, r *http.Request) {

@@ -13,12 +13,20 @@ import (
 // Cada paso re-verifica por artefacto; nada se re-hace de más.
 func TestE2EResumeCompleto(t *testing.T) {
 	home := setupEnv(t)
-	// PATH: claude stubbeado; git/jq/bash reales (doctor los necesita de verdad)
+	// PATH: claude stubbeado; git/jq/bash reales (doctor los necesita de verdad).
+	// Los bins de las capacidades CLI sembradas también se stubbean: en el
+	// mundo real los instala `make init`; aquí el doctor solo debe verlos.
 	stubs := t.TempDir()
 	payload := `{\"owns\":\"todo el dominio\",\"not_owns\":\"nada\",\"invariants\":[\"i1\"],\"requirements\":[]}`
 	if err := os.WriteFile(filepath.Join(stubs, "claude"),
 		[]byte(fmt.Sprintf("#!/bin/sh\necho '{\"result\": \"%s\"}'\n", payload)), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, b := range []string{"go", "gitleaks", "semgrep", "ccusage", "go-arch-lint", "gh"} {
+		if err := os.WriteFile(filepath.Join(stubs, b),
+			[]byte("#!/bin/sh\necho "+b+" 1.0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", stubs+":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("HARNESS_CLAUDE_BIN", filepath.Join(stubs, "claude"))

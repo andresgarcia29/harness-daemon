@@ -83,7 +83,7 @@ func RunDoctor(ws string, log func(string)) error {
 		}
 	}
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("el doctor reporta fallos (%s) — corrígelos y reintenta, o revisa el log", last)
+		return fmt.Errorf("el doctor reporta fallos (%s) — si son binarios faltantes, `make init` en el workspace instala las capacidades elegidas; corrige y reintenta", last)
 	}
 	return nil
 }

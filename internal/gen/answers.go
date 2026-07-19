@@ -185,7 +185,37 @@ func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *An
 	a.Memory.Profiles = []string{"orquestador", "arquitecto"}
 	a.Deploy.RollbackMode = "auto"
 	a.Cronjobs.Enabled = false
+	a.Capabilities = SeedCapabilities(inv)
 	return a
+}
+
+// SeedCapabilities — las capacidades CLI detectadas por señal (toolchains,
+// gitleaks, ccusage…) entran al borrador desde el arranque: sin esto el
+// bootstrap de la instancia no instalaba NADA (bug real: make init sin
+// ensure lines). Los MCP se eligen a mano en su paso; phase 2 queda fuera.
+func SeedCapabilities(inv *Inventory) []CapSel {
+	caps, err := Catalog()
+	if err != nil {
+		return nil
+	}
+	rec := RecommendCapabilities(inv)
+	var out []CapSel
+	for _, c := range caps {
+		if c.Provider != "cli" || c.Phase == 2 {
+			continue
+		}
+		if _, ok := rec[c.Name]; !ok {
+			continue
+		}
+		scope := "core"
+		if c.Cronjob != "" {
+			scope = "cronjob"
+		}
+		out = append(out, CapSel{Name: c.Name, Bin: c.Bin, Tier: c.PermissionTier,
+			Scope: scope, Profiles: c.Profiles})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // SeedClusters — las reglas de la tabla del SKILL: 1 abogado por service;

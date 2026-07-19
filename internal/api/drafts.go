@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andresgarcia29/harness-daemon/internal/gen"
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 )
 
@@ -165,13 +166,104 @@ func RatifyDoc(ws, rel string) error {
 	if !strings.Contains(string(b), "status: DRAFT") {
 		return fmt.Errorf("%s ya no está en DRAFT", rel)
 	}
-	out := strings.Replace(string(b), "status: DRAFT", "status: RATIFIED", 1)
-	// limpia el banner de advertencia si sigue en la misma línea
-	out = strings.ReplaceAll(out, "status: RATIFIED   # ⚠️ ratificar por humano", "status: RATIFIED  # firmado desde el panel")
+	// la LÍNEA entera se reemplaza: dejar el comentario viejo al lado
+	// ("# ⚠️ RATIFICAR POR HUMANO…") junto a RATIFIED confunde a cualquier
+	// agente que lo lea — la firma debe verse firmada
+	lines := strings.Split(string(b), "\n")
+	for i, l := range lines {
+		if idx := strings.Index(l, "status: DRAFT"); idx >= 0 {
+			lines[i] = l[:idx] + "status: RATIFIED  # firmado por humano desde el panel"
+			break
+		}
+	}
+	out := strings.Join(lines, "\n")
 	fi, _ := os.Stat(abs)
 	mode := os.FileMode(0o644)
 	if fi != nil {
 		mode = fi.Mode()
 	}
-	return os.WriteFile(abs, []byte(out), mode)
+	if err := os.WriteFile(abs, []byte(out), mode); err != nil {
+		return err
+	}
+	// firmar es una transformación SANCIONADA: el doc sigue siendo "nuestro"
+	// para generate --update (no un .new de conflicto)
+	gen.UpdateManifestSha(ws, rel, []byte(out))
+	return nil
+}
+
+// ReadDoc — el visor: leer un documento de la ley para REVISARLO antes de
+// firmar (la queja real: "la UI no me dejaba verlos"). Solo .md bajo docs/,
+// specs/ o .claude/agents/ — lectura, jamás escritura.
+func ReadDoc(ws, rel string) (string, error) {
+	rel = filepath.Clean(rel)
+	if strings.Contains(rel, "..") || filepath.IsAbs(rel) || !strings.HasSuffix(rel, ".md") {
+		return "", fmt.Errorf("ruta inválida")
+	}
+	okPrefix := false
+	for _, p := range []string{"docs/", "specs/", filepath.Join(".claude", "agents") + "/"} {
+		if strings.HasPrefix(rel, p) {
+			okPrefix = true
+		}
+	}
+	if !okPrefix {
+		return "", fmt.Errorf("solo documentos de docs/, specs/ o .claude/agents/")
+	}
+	b, err := os.ReadFile(filepath.Join(ws, rel))
+	if err != nil {
+		return "", fmt.Errorf("no pude leer %s", rel)
+	}
+	if len(b) > 256*1024 {
+		b = b[:256*1024]
+	}
+	return string(b), nil
+}
+
+// DocHandler — GET /api/doc?path=…[&target=…]: local del workspace, o del
+// VPS por ssh (cat con argv quoteado — mismo código, misma ley).
+func DocHandler(ws string) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		if !GuardRead(rw, r) {
+			return
+		}
+		rel := r.URL.Query().Get("path")
+		rw.Header().Set("Content-Type", "application/json")
+		if tname := r.URL.Query().Get("target"); tname != "" {
+			tgt, ok := ResolveTargetFull(tname)
+			if !ok || tgt.SSH == "" || tgt.Path == "" {
+				writeJSON(rw, 400, map[string]any{"ok": false, "error": "target sin workspace"})
+				return
+			}
+			// validación local de la ruta ANTES de tocar el VPS
+			if _, err := func() (string, error) {
+				rel2 := filepath.Clean(rel)
+				if strings.Contains(rel2, "..") || filepath.IsAbs(rel2) || !strings.HasSuffix(rel2, ".md") {
+					return "", fmt.Errorf("ruta inválida")
+				}
+				return rel2, nil
+			}(); err != nil {
+				writeJSON(rw, 400, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			out, err := herdr.Exec(tgt.SSH, []string{"cat", filepath.Join(tgt.Path, filepath.Clean(rel))}, nil, 20*time.Second, nil)
+			if err != nil {
+				writeJSON(rw, 502, map[string]any{"ok": false, "error": "VPS: " + err.Error()})
+				return
+			}
+			if len(out) > 256*1024 {
+				out = out[:256*1024]
+			}
+			writeJSON(rw, 200, map[string]any{"ok": true, "path": rel, "content": string(out)})
+			return
+		}
+		if ws == "" {
+			writeJSON(rw, 409, map[string]any{"ok": false, "error": "sin workspace local — elige una máquina"})
+			return
+		}
+		content, err := ReadDoc(ws, rel)
+		if err != nil {
+			writeJSON(rw, 400, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(rw, 200, map[string]any{"ok": true, "path": rel, "content": content})
+	}
 }
