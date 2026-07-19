@@ -1,5 +1,5 @@
 {
-  "installer_commit": "29c7b78779205f52f6dc6309e1e6e5288e962d52",
+  "installer_commit": "2e1cb3c70e6038cddf0e99c36ed85047fefb4912",
   "files": {
     "catalog/capabilities.json": "64c29cd176503a7e1bbe8d99ed39cb6e394a1318200f91bed3545d94139df289",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
