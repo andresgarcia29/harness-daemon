@@ -135,6 +135,10 @@ func Generate(a *Answers, inv *Inventory, o Opts) (*Report, error) {
 		switch {
 		case !exists:
 			action = "created"
+		case r.g.Keep && !o.Force:
+			// documento de ley existente: el template jamás lo pisa
+			action = "kept"
+			next[r.g.Dst] = sha(cur) // el canon es LO QUE HAY (firmas incluidas)
 		case sha(cur) == newSha:
 			action = "kept"
 		case prev[r.g.Dst] == sha(cur) || o.Force:

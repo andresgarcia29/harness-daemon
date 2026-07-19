@@ -20,6 +20,11 @@ type GenFile struct {
 	Extra map[string]string
 	// Inline: contenido literal (sin Src).
 	Inline []byte
+	// Keep: documento de LEY — el template solo lo crea; una vez que existe,
+	// evoluciona por arqueología/ratificación/humano y el re-render JAMÁS lo
+	// pisa (la lección de corvux: un generate reescribió specs ratificadas
+	// con el esqueleto). --force sigue pudiendo.
+	Keep bool
 }
 
 func always(*Answers, *Inventory) bool { return true }
@@ -83,7 +88,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 		c := c
 		add(GenFile{
 			Src: "agents/svc-agent.md.tmpl", Dst: ".claude/agents/" + c.Agent + ".md",
-			Mode: reg, Render: true, When: always,
+			Mode: reg, Render: true, When: always, Keep: true,
 			Extra: map[string]string{
 				"AGENT_NAME":    c.Agent,
 				"CLUSTER_LABEL": c.Agent,
@@ -99,9 +104,9 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	}
 
 	// ── docs y specs ──
-	add(GenFile{Src: "docs/constitution.md.tmpl", Dst: "docs/constitution.md", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "docs/constitution.md.tmpl", Dst: "docs/constitution.md", Mode: reg, Render: true, When: always, Keep: true})
 	add(GenFile{Src: "docs/index.md.tmpl", Dst: "docs/index.md", Mode: reg, Render: true, When: always})
-	add(GenFile{Src: "docs/architecture-map.md.tmpl", Dst: "docs/architecture/map.md", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "docs/architecture-map.md.tmpl", Dst: "docs/architecture/map.md", Mode: reg, Render: true, When: always, Keep: true})
 	add(GenFile{Src: "docs/pipeline.md.tmpl", Dst: "docs/harness/pipeline.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/intake.md.tmpl", Dst: "docs/harness/intake.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/testing-policy.md.tmpl", Dst: "docs/harness/testing-policy.md", Mode: reg, Render: true, When: always})
@@ -115,7 +120,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 		}
 		dom := strings.TrimPrefix(c.Agent, "svc-")
 		add(GenFile{
-			Src: "docs/spec.md.tmpl", Dst: "specs/" + dom + "/spec.md", Mode: reg, Render: true, When: always,
+			Src: "docs/spec.md.tmpl", Dst: "specs/" + dom + "/spec.md", Mode: reg, Render: true, When: always, Keep: true,
 			Extra: map[string]string{
 				"CAPABILITY":  dom,
 				"OWNER_AGENT": c.Agent,
