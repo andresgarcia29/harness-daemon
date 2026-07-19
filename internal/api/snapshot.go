@@ -10,6 +10,10 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/store"
