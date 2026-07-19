@@ -139,9 +139,13 @@ func TestGenerateRespetaPersonalizaciones(t *testing.T) {
 	if _, err := Generate(a, inv, opts(ws)); err != nil {
 		t.Fatal(err)
 	}
-	// el humano personaliza su constitution
-	custom := filepath.Join(ws, "docs", "constitution.md")
-	if err := os.WriteFile(custom, []byte("MI LEY LOCAL\n"), 0o644); err != nil {
+	// el humano personaliza un doc NORMAL (pipeline) y uno de LEY (constitution)
+	custom := filepath.Join(ws, "docs", "harness", "pipeline.md")
+	if err := os.WriteFile(custom, []byte("MI PIPELINE LOCAL\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	law := filepath.Join(ws, "docs", "constitution.md")
+	if err := os.WriteFile(law, []byte("MI LEY RATIFICADA\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// cambia un answer y regenera
@@ -153,20 +157,31 @@ func TestGenerateRespetaPersonalizaciones(t *testing.T) {
 	if rep.Conflicts == 0 {
 		t.Fatalf("la personalización debe reportarse como conflict: %+v", rep)
 	}
-	if b, _ := os.ReadFile(custom); string(b) != "MI LEY LOCAL\n" {
+	if b, _ := os.ReadFile(custom); string(b) != "MI PIPELINE LOCAL\n" {
 		t.Fatal("el archivo del humano JAMÁS se pisa sin --force")
 	}
 	if _, err := os.Stat(custom + ".new"); err != nil {
 		t.Fatal("la propuesta nueva debe quedar en .new")
 	}
-	// con --force sí se pisa
+	// los docs de LEY (Keep): intactos SIEMPRE, sin .new siquiera — el
+	// template solo los crea; la lección de las specs ratificadas de corvux
+	if b, _ := os.ReadFile(law); string(b) != "MI LEY RATIFICADA\n" {
+		t.Fatal("un doc de ley existente jamás se re-renderiza")
+	}
+	if _, err := os.Stat(law + ".new"); err == nil {
+		t.Fatal("la ley ni siquiera genera .new — evoluciona por arqueología/firma/humano")
+	}
+	// con --force sí se pisa (ambos)
 	o := opts(ws)
 	o.Force = true
 	if _, err := Generate(a, inv, o); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(custom); string(b) == "MI LEY LOCAL\n" {
+	if b, _ := os.ReadFile(custom); string(b) == "MI PIPELINE LOCAL\n" {
 		t.Fatal("--force debe pisar")
+	}
+	if b, _ := os.ReadFile(law); string(b) == "MI LEY RATIFICADA\n" {
+		t.Fatal("--force pisa también la ley (explícito y a sabiendas)")
 	}
 }
 
