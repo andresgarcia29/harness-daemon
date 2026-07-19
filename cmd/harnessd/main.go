@@ -73,6 +73,10 @@ func main() {
 		os.Exit(initStepCmd(rest))
 	case "ratify":
 		os.Exit(ratifyCmd(rest))
+	case "task-git":
+		os.Exit(taskGitCmd(rest))
+	case "task-events":
+		os.Exit(taskEventsCmd(rest))
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	// port=0 significa "no especificado": los comandos del daemon caen a 7718
@@ -553,24 +557,39 @@ func run(port int, wsPath string, setup bool) int {
 		}
 	})
 	// Paridad de lectura: el grafo completo de una tarea, sus chips de git.
-	mux.HandleFunc("/api/task-events", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		w := wsVal.Load()
-		if w == nil {
-			_ = json.NewEncoder(rw).Encode([]any{})
-			return
+	// Con ?target= el drill-down se proxea al VPS por ssh (el crash de la
+	// primera tarea remota: el local sin workspace devolvía shapes vacíos).
+	taskProxy := func(sub string, localFn func(w ident.Workspace, task string) any, emptyShape any) http.HandlerFunc {
+		return func(rw http.ResponseWriter, r *http.Request) {
+			rw.Header().Set("Content-Type", "application/json")
+			taskID := r.URL.Query().Get("task")
+			if tname := r.URL.Query().Get("target"); tname != "" {
+				if tgt, ok := api.ResolveTargetFull(tname); ok && tgt.SSH != "" && tgt.Path != "" {
+					out, err := herdr.Exec(tgt.SSH,
+						[]string{"harness", sub, "--workspace", tgt.Path, "--task", taskID},
+						nil, 30*time.Second, nil)
+					var v any
+					if err == nil && json.Unmarshal(out, &v) == nil {
+						_ = json.NewEncoder(rw).Encode(v)
+						return
+					}
+				}
+				_ = json.NewEncoder(rw).Encode(emptyShape)
+				return
+			}
+			w := wsVal.Load()
+			if w == nil {
+				_ = json.NewEncoder(rw).Encode(emptyShape)
+				return
+			}
+			_ = json.NewEncoder(rw).Encode(localFn(*w, taskID))
 		}
-		_ = json.NewEncoder(rw).Encode(api.TaskEvents(st, w.ID, r.URL.Query().Get("task")))
-	})
-	mux.HandleFunc("/api/task-git", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		w := wsVal.Load()
-		if w == nil {
-			_ = json.NewEncoder(rw).Encode(map[string]any{})
-			return
-		}
-		_ = json.NewEncoder(rw).Encode(api.BuildTaskGit(w.Path, r.URL.Query().Get("task")))
-	})
+	}
+	mux.HandleFunc("/api/task-events", taskProxy("task-events",
+		func(w ident.Workspace, task string) any { return api.TaskEvents(st, w.ID, task) }, []any{}))
+	mux.HandleFunc("/api/task-git", taskProxy("task-git",
+		func(w ident.Workspace, task string) any { return api.BuildTaskGit(w.Path, task) },
+		map[string]any{"repos": []any{}, "read": []any{}}))
 	mux.HandleFunc("/api/session", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		d, err := api.BuildSession(st, r.URL.Query().Get("id"), time.Now().Unix())
