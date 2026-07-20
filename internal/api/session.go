@@ -9,13 +9,13 @@ import (
 	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
-type threadItem struct {
+type ThreadItem struct {
 	K   string `json:"k"` // text | think | tool
 	TS  int64  `json:"ts"`
 	T   string `json:"t"`
 	Inp string `json:"inp,omitempty"`
 }
-type agentDetail struct {
+type AgentDetail struct {
 	ID      string       `json:"id"`
 	Who     string       `json:"who"`
 	Type    string       `json:"type"`
@@ -25,21 +25,21 @@ type agentDetail struct {
 	FirstTS int64        `json:"first_ts"`
 	LastTS  int64        `json:"last_ts"`
 	Elapsed int64        `json:"elapsed"`
-	Usage   usage        `json:"usage"`
+	Usage   Usage        `json:"usage"`
 	Cost    *float64     `json:"cost"`
-	Thread  []threadItem `json:"thread"`
+	Thread  []ThreadItem `json:"thread"`
 }
 type SessionDetail struct {
 	ID     string        `json:"id"`
 	Short  string        `json:"short"`
-	Agents []agentDetail `json:"agents"`
+	Agents []AgentDetail `json:"agents"`
 }
 
 // BuildSession arma el detalle de UNA sesión desde el store.
 func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail, error) {
 	prices, _ := loadPrices(db)
 	// usage + primer/último ts por agente (de sus llamadas — el reloj bueno)
-	au := map[string]*usage{}
+	au := map[string]*Usage{}
 	amodel := map[string]string{}
 	amodelTS := map[string]int64{}
 	aFirst := map[string]int64{}
@@ -57,7 +57,7 @@ func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail
 			continue
 		}
 		if au[aid] == nil {
-			au[aid] = &usage{}
+			au[aid] = &Usage{}
 		}
 		u := au[aid]
 		u.In += in
@@ -79,7 +79,7 @@ func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail
 	}
 	rows.Close()
 
-	d := &SessionDetail{ID: sessionID, Short: short(sessionID), Agents: []agentDetail{}}
+	d := &SessionDetail{ID: sessionID, Short: short(sessionID), Agents: []AgentDetail{}}
 	ar, err := db.Query(`SELECT id, type, description, spawn_depth, started, last_seen
 		FROM agents WHERE session_id = ? ORDER BY (id != 'main'), started`, sessionID)
 	if err != nil {
@@ -93,7 +93,7 @@ func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail
 		if ar.Scan(&aid, &typ, &desc, &depth, &started, &last) != nil {
 			continue
 		}
-		u := usage{}
+		u := Usage{}
 		if au[aid] != nil {
 			u = *au[aid]
 		}
@@ -121,14 +121,14 @@ func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail
 				who = aid
 			}
 		}
-		thr := []threadItem{}
+		thr := []ThreadItem{}
 		items, _ := db.Query(`SELECT ts, kind, text, COALESCE(hint,'')
 			FROM (SELECT seq, ts, kind, text, hint FROM agent_thread
 			      WHERE session_id = ? AND agent_id = ? ORDER BY seq DESC LIMIT 80)
 			ORDER BY seq ASC`, sessionID, aid)
 		if items != nil {
 			for items.Next() {
-				var it threadItem
+				var it ThreadItem
 				var ts sql.NullInt64
 				if items.Scan(&ts, &it.K, &it.T, &it.Inp) == nil {
 					if ts.Valid {
@@ -139,7 +139,7 @@ func BuildSession(db store.Queryer, sessionID string, now int64) (*SessionDetail
 			}
 			items.Close()
 		}
-		d.Agents = append(d.Agents, agentDetail{
+		d.Agents = append(d.Agents, AgentDetail{
 			ID: aid, Who: who, Type: typ, Model: model,
 			Active: lst > 0 && now-lst < activeWindow, Depth: depth,
 			FirstTS: first, LastTS: lst, Elapsed: el, Usage: u,

@@ -17,7 +17,7 @@ func liveByOf(snap *Snapshot, id string) string {
 
 func TestEnrichLiveness(t *testing.T) {
 	base := func() *Snapshot {
-		return &Snapshot{Sessions: []session{
+		return &Snapshot{Sessions: []Session{
 			{ID: "trabaja", Cwd: "/ws/worktrees/COR-1", NActive: 2},
 			{ID: "abierta-idle", Cwd: "/ws/worktrees/COR-2", NActive: 1},
 			{ID: "sin-pane-reciente", Cwd: "/ws/worktrees/COR-3", NActive: 1},
@@ -58,7 +58,7 @@ func TestEnrichLiveness(t *testing.T) {
 	// cwd COMPARTIDO (dos sesiones en la raíz del workspace): con UN pane
 	// trabajando ahí, sólo la que escribe de verdad (NActive>0) se enciende; la
 	// hermana muerta (NActive=0) NO — así no se encienden 8 a la vez.
-	shared := &Snapshot{Sessions: []session{
+	shared := &Snapshot{Sessions: []Session{
 		{ID: "viva-raiz", Cwd: "/ws", NActive: 1},
 		{ID: "muerta-raiz", Cwd: "/ws", NActive: 0},
 	}}
