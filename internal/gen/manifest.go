@@ -74,6 +74,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "Makefile.tmpl", Dst: "Makefile", Mode: reg, Render: true, When: always})
 	add(GenFile{Inline: []byte("repos/\nworktrees/\nlocks/\n.cache/\n.secrets\n.secrets.d/\ninventory.json\n.harness/\ntasks/\n"), Dst: ".gitignore", Mode: reg, When: always})
 	add(GenFile{Src: "models.yaml.tmpl", Dst: "models.yaml", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "policy.json", Dst: "harness-policy.json", Mode: reg, When: always})
 
 	// ── .claude: settings, hooks, agentes, comandos ──
 	add(GenFile{Src: "settings.json.tmpl", Dst: ".claude/settings.json", Mode: reg, Render: true, When: always})
@@ -110,6 +111,8 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "docs/pipeline.md.tmpl", Dst: "docs/harness/pipeline.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/intake.md.tmpl", Dst: "docs/harness/intake.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/testing-policy.md.tmpl", Dst: "docs/harness/testing-policy.md", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "docs/evidence.md", Dst: "docs/harness/evidence.md", Mode: reg, When: always})
+	add(GenFile{Src: "docs/policy.md", Dst: "docs/harness/policy.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/quality.md.tmpl", Dst: "docs/quality.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/adr-template.md", Dst: "docs/adr/ADR-0000-template.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/cronjobs.md.tmpl", Dst: "docs/harness/cronjobs.md", Mode: reg, Render: true,
@@ -135,6 +138,8 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	// ── scripts ──
 	add(GenFile{Src: "scripts/bootstrap.sh.tmpl", Dst: "scripts/bootstrap.sh", Mode: sh, Render: true, When: always})
 	add(GenFile{Src: "scripts/ship.sh.tmpl", Dst: "scripts/ship.sh", Mode: sh, Render: true, When: always})
+	add(GenFile{Src: "scripts/evidence.py", Dst: "scripts/evidence.py", Mode: sh, When: always})
+	add(GenFile{Src: "scripts/harness-policy.py", Dst: "scripts/harness-policy.py", Mode: sh, When: always})
 	add(GenFile{Src: "scripts/secrets.sh.tmpl", Dst: "scripts/secrets.sh", Mode: sh, Render: true, When: always})
 	add(GenFile{Src: "scripts/deploy-watch.sh.tmpl", Dst: "scripts/deploy-watch.sh", Mode: sh, Render: true, When: hasCD})
 	add(GenFile{Src: "scripts/ticket-pull.sh.tmpl", Dst: "scripts/ticket-pull.sh", Mode: sh, Render: true,
@@ -148,7 +153,10 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "@scripts/doctor.sh", Dst: "scripts/doctor.sh", Mode: sh, When: always})
 
 	// ── panel ──
-	for _, u := range []struct{ src, dst string; mode fs.FileMode }{
+	for _, u := range []struct {
+		src, dst string
+		mode     fs.FileMode
+	}{
 		{"ui/panel.sh", "scripts/ui/panel.sh", sh},
 		{"ui/server.py", "scripts/ui/server.py", sh},
 		{"ui/pricing.json", "scripts/ui/pricing.json", reg},

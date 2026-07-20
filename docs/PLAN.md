@@ -224,7 +224,8 @@ de "vi datos de otro cliente", y el upside es ninguno.
 
 ## Lo que este proyecto NO hace
 
-- **No actúa.** Sin botones de aprobar/reintentar/matar ([ADR-0009](adr/ADR-0009-el-daemon-observa-no-ejecuta.md)).
+- **Opera sin publicar.** Puede crear y reanudar trabajo (ADR-0010), pero no
+  aprobar, mergear ni saltarse gates. ADR-0010 reemplaza parcialmente ADR-0009.
 - **No hay streaming token a token.** Medido: un agente vivo dejó su transcript
   quieto 36s y luego escribió 52KB de golpe. Claude Code escribe los mensajes al
   cerrarlos. Mostramos por turno y lo decimos. Un typewriter falso sería teatro

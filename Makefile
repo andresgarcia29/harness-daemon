@@ -9,8 +9,8 @@ build: ## compila para esta máquina (bin/harness + symlink harnessd)
 	@go build -ldflags "$(LDFLAGS)" -o bin/harness ./cmd/harnessd
 	@ln -sf harness bin/harnessd
 
-test: ## vet + tests
-	@go vet ./... && go test ./...
+test: ## docs + vet + tests
+	@./scripts/check-docs.sh && go vet ./... && go test ./...
 
 run: build ## arranca en primer plano
 	@./bin/harnessd run

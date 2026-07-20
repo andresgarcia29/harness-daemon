@@ -80,8 +80,10 @@ func TestGenerateCompleto(t *testing.T) {
 		".claude/settings.json", ".claude/hooks/block-direct-push.sh", ".claude/agents/architect.md",
 		".claude/agents/svc-atlas.md", ".claude/agents/frontends.md", ".claude/agents/qa.md",
 		".claude/commands/auto.md", "scripts/ship.sh", "scripts/doctor.sh", "scripts/bootstrap.sh",
+		"scripts/evidence.py", "scripts/harness-policy.py", "harness-policy.json",
 		"specs/atlas/spec.md", "docs/constitution.md", ".mcp.json", "scripts/ui/panel.sh",
-		"scripts/ui/dist/index.html", "scripts/cronjobs/jobs/ci-doctor.sh", "ratchets.json"} {
+		"scripts/ui/dist/index.html", "scripts/cronjobs/jobs/ci-doctor.sh", "ratchets.json",
+		"docs/harness/evidence.md", "docs/harness/policy.md"} {
 		if _, err := os.Stat(filepath.Join(ws, f)); err != nil {
 			t.Errorf("falta %s", f)
 		}
@@ -91,7 +93,7 @@ func TestGenerateCompleto(t *testing.T) {
 		t.Errorf(".harness-version: %q", b)
 	}
 	// 3. bits de ejecución
-	for _, f := range []string{"scripts/ship.sh", "scripts/doctor.sh", ".claude/hooks/block-direct-push.sh", "scripts/cronjobs/cron-runner.sh"} {
+	for _, f := range []string{"scripts/ship.sh", "scripts/doctor.sh", "scripts/evidence.py", "scripts/harness-policy.py", ".claude/hooks/block-direct-push.sh", "scripts/cronjobs/cron-runner.sh"} {
 		fi, err := os.Stat(filepath.Join(ws, f))
 		if err != nil || fi.Mode()&0o111 == 0 {
 			t.Errorf("%s debe ser ejecutable", f)

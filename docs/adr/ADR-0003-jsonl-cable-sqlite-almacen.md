@@ -1,6 +1,7 @@
 # ADR-0003 — JSONL es el cable, SQLite es el almacén
 
-`status: ACCEPTED` · 2026-07-16
+`status: AMENDED` · 2026-07-16 · PostgreSQL opcional fue añadido después;
+SQLite continúa como default local.
 
 ## Contexto
 

@@ -53,6 +53,15 @@ del trabajo y no habrá aclaraciones. Entonces:
    `tasks/<id>/` y su trazabilidad es el trailer `Task: <id>`. Si
    querías el ticket, la entrada era A.
 
+## Paso 0.2 — Estado ejecutable (la prosa no mueve fases)
+
+Toda tarea nueva se inicializa una sola vez con
+`scripts/harness-policy.py init tasks/<id> [--budget-usd <valor-del-panel>]`. Al retomar, lee `state.json` y
+continúa desde su fase; no infieras la fase por conversación. Cada avance se
+solicita con `scripts/harness-policy.py transition tasks/<id> <fase> --actor
+orchestrator`. Una transición rechazada es un gate: no edites `state.json` a
+mano.
+
 ## Paso 0.4 — Preferencias del panel (si task.md trae `source: panel`)
 
 El humano pudo configurar CÓMO trabajar desde el formulario del panel. Su
@@ -96,33 +105,46 @@ Reglas del ledger, en orden de precedencia:
 1. **Intake**. Valida task.md contra `docs/harness/intake.md`. Rebotar
    NO es una opción (no hay a quién): un criterio no verificable lo
    REESCRIBES verificable y lo anotas en el ledger. Solo paras si caes
-   en la lista de abajo.
+   en la lista de abajo. Cuando quede válido, solicita `intake → rfc`.
 2. **RFC**. Abogados afectados en PARALELO, una respuesta JSON cada
    uno. Arquitecto sintetiza; árbitro de contratos: el repo proto.
    Salida: `plan.md` (DAG), delta-spec EARS, beads. Si dos abogados
    chocan, el desempate es la evidencia (spec > ADR > map.md de
-   ownership), no el consenso ni tu opinión — máx 2 rondas.
+   ownership), no el consenso ni tu opinión — máx 2 rondas. Cuando plan,
+   delta-spec y `dag.json` sean válidos, ejecuta
+   `scripts/harness-policy.py validate-dag tasks/<id>/dag.json` y solicita
+   `rfc → implement` sólo si queda verde.
 3. **Implement**. Un worktree por repo, un implementer por tarea.
    `bd ready` manda: todo lo que el DAG no serializa va EN PARALELO.
    Cada tarea que termina encola su review DE INMEDIATO (pipeline, no
    barrera: T1 en review mientras T4 se implementa).
 4. **Review**. Reviewer (veredicto + compliance matrix) y qa (ejercita
-   los criterios). Loops fail→fix hasta {{LOOP_BUDGET}}.
+   los criterios). Al entrar solicita `implement → review`. Loops fail→fix
+   vuelven mediante `review → implement → review`; policy cuenta y limita las
+   rondas. Toda prueba que sustenta un pass usa `scripts/evidence.py run`.
 5. **Checkpoint** — SOLO si `autonomy: checkpoint` en
    harness-answers.yaml: un resumen de 10 líneas antes del PRIMER ship
    a main y esperas un "go". Con `autonomy: full` este paso no existe.
 6. **Ship**. Por orden del DAG, repo por repo, vía `ship.sh`. Entre
    repos NO pausas: expand/contract hace seguro el orden. Gate rojo →
    máx 2 rondas de autofix (el error del gate ES el prompt del fix).
+   Tras todos los repos verdes solicita `review → ship`.
 7. **Deploy-watch**. 🟢 sigue el DAG. 🔴 **rollback PRIMERO**,
-   diagnóstico después.
+   diagnóstico después. Al iniciar solicita `ship → deploy`.
 8. **Archive**. Fusiona el delta-spec en la spec maestra, cierra el
-   ticket con evidencia (si origin: ticket), `mem_save`.
+   ticket con evidencia (si origin: ticket), `mem_save`, y solicita
+   `deploy → archive`.
 
 ## Dónde SÍ paras (lista cerrada — todo lo demás lo decides tú)
 
-Once paradas. Cada una es una LEY del harness, no una preferencia. Si tu
+Lista cerrada de paradas. Cada una es una LEY del harness, no una preferencia. Si tu
 razón para parar no está en esta lista, no es una razón: decide.
+
+Una parada se registra antes de emitirse con `scripts/harness-policy.py pause
+tasks/<id> --reason <código> --detail "<por qué>" --actor orchestrator`. Los
+códigos permitidos viven en `harness-policy.json`; al continuar usa `resume`,
+no edites el estado. Al cerrar cada fase registra el total monotónico de
+`ccusage` con `record-cost --total-usd <n>`; exceder presupuesto es un gate.
 
 - **Un abogado afectado sigue `status: DRAFT`** — su ley no está
   ratificada; litigar con una constitución sin ratificar es litigar con

@@ -1,6 +1,8 @@
 # ADR-0009 — El daemon observa; no ejecuta, no decide, no actúa
 
-`status: ACCEPTED` · 2026-07-16
+`status: SUPERSEDED_IN_PART` · 2026-07-16 · reemplazado para creación y
+reanudación de trabajo por [ADR-0010](ADR-0010-el-plano-de-operar.md). Sigue
+vigente la prohibición de aprobar, mergear o saltarse gates desde el panel.
 
 ## Contexto
 

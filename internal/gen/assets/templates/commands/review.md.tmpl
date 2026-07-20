@@ -7,6 +7,11 @@ Review de $ARGUMENTS. El artefacto de salida es
 `tasks/<task-id>/verdict-<repo>.json` — sin él, ship.sh no abre la
 puerta.
 
+Antes del primer review de la tarea solicita la transición ejecutable:
+`scripts/harness-policy.py transition tasks/<task-id> review --actor orchestrator`.
+Si policy la rechaza, no falsifiques el estado: corrige la fase precedente o
+reporta el código de error.
+
 1. **Lanza al agente `reviewer`** sobre el worktree
    `worktrees/<task-id>/<repo>`. Escribe el veredicto con
    `qa: "pending"`.
@@ -20,11 +25,16 @@ puerta.
      el campo `qa`.
    - Cambios backend cuyos criterios ya están cubiertos por tests que
      el reviewer verificó en la compliance matrix (y que ship.sh
-     re-corre como gate) → el reviewer marca `qa: "pass"` con
+     re-corre como gate) → ejecuta esos tests con `scripts/evidence.py
+     run ... --kind test -- <comando>` y agrega el `EVIDENCE_ID` al
+     veredicto; después el reviewer marca `qa: "pass"` con
      `qa_notes: "criterios test-verificables; cubiertos por <tests>"`.
      Un agente QA que solo re-lee lo que el review ya probó es
      ceremonia, no verificación.
-4. `verdict: pass` + `qa: pass` → anuncia que la tarea está lista para
+4. Antes de anunciar, comprueba que el veredicto tiene `schema: 1`, task, repo,
+   HEAD completo, reviewer, implementation_agents y al menos un ID en
+   `evidence[]`.
+5. `verdict: pass` + `qa: pass` → anuncia que la tarea está lista para
    `/ship <task-id> <repo>`.
 
 Reglas: tú no editas código ni el veredicto — solo orquestas

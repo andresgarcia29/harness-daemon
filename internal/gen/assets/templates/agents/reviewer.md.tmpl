@@ -20,8 +20,15 @@ ship.sh NO deja pasar el código a main.
 ## Veredicto (escribe el archivo, formato EXACTO)
 ```json
 {
+  "schema": 1,
+  "task_id": "<task-id>",
+  "repo": "<repo>",
+  "commit": "<git rev-parse HEAD completo>",
+  "reviewer": "reviewer",
+  "implementation_agents": ["<identidad(es) de implementer de plan/beads>"],
   "verdict": "pass | fail",
   "qa": "pending",
+  "evidence": ["EV-TEST-..."],
   "blocking": ["… solo lo que impide shippear, con remediación concreta …"],
   "non_blocking": ["… mejoras; NO bloquean; el implementer NO las atiende en este loop …"],
   "docs_updated": true,
@@ -32,8 +39,16 @@ ship.sh NO deja pasar el código a main.
   "snapshots_updated_justified": true
 }
 ```
+- `commit` es el HEAD completo revisado. Si cambia una línea después, el
+  veredicto queda obsoleto y se repite review. Nunca copies evidencia de otro
+  commit, repo o tarea: `ship.sh` comprueba esas tres identidades y el SHA-256
+  del output.
+- `evidence[]` contiene IDs producidos exclusivamente por
+  `scripts/evidence.py run`; escribir un ID a mano no crea evidencia.
 - **Compliance matrix**: por cada requirement del delta-spec de la
   tarea (tasks/<id>/delta-spec.md), qué test lo prueba de verdad.
+  Las rutas de `tests[]` son archivos reales que abriste durante review; los
+  IDs de ejecuciones pertenecen al `evidence[]` superior.
   `requirements_uncovered` > 0 bloquea el ship (gate duro) salvo
   excepción explícita del humano. Requirement sin test = deseo.
 - Snapshots/goldens modificados en el diff SIN justificación en el
@@ -48,5 +63,7 @@ ship.sh NO deja pasar el código a main.
 
 ## Reglas
 - NO editas código. NO corriges tú los problemas. Solo veredicto.
+- No puedes figurar en `implementation_agents`: review independiente es una
+  política ejecutable, no una recomendación.
 - Si el diff excede el scope de la tarea: `fail` con blocking
   "recorta al scope" — el scope creep es defecto, no regalo.

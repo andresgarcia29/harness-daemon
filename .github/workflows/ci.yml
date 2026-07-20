@@ -10,6 +10,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: harness
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: harness_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U harness -d harness_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HARNESS_PG_DSN: postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - name: checkout harness-installer (privado — fuente de los assets)
@@ -23,5 +39,10 @@ jobs:
           go-version-file: go.mod
       - name: drift de assets embebidos
         run: ./scripts/sync-assets.sh --check ./harness-installer
-      - name: vet + tests
-        run: go vet ./... && go test ./...
+      - name: drift de documentación y contratos
+        run: ./scripts/check-docs.sh ./harness-installer
+      - name: contratos del installer
+        working-directory: harness-installer
+        run: bash tests/run.sh
+      - name: vet + tests con detector de carreras
+        run: go vet ./... && go test -race ./...
