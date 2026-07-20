@@ -5,6 +5,7 @@
 packages:
   - path: "github.com/andresgarcia29/harness-daemon/internal/api"
     output_path: "harness.gen.ts"
+    optional_type: "null"
     type_mappings:
       "time.Time": "string"
     frontmatter: |

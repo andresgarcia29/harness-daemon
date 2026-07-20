@@ -20,7 +20,7 @@ export interface LawDoc {
   kind: string;
   title: string;
   status: string; // draft | ratified | plain (sin frontmatter de status)
-  agent?: string; // cluster re-excavable (svc-*)
+  agent: string | null; // cluster re-excavable (svc-*)
 }
 
 //////////
@@ -65,9 +65,9 @@ export interface McpServer {
   args: string[];
   wrapped: boolean;
   bin_ok: boolean;
-  secrets_ok?: boolean;
+  secrets_ok: boolean | null;
   env: string[];
-  probe?: McpProbe; // la sonda viva (OPERAR): se llena al "Probar"
+  probe: McpProbe | null; // la sonda viva (OPERAR): se llena al "Probar"
 }
 /**
  * McpProbe: resultado del handshake JSON-RPC real contra un servidor MCP.
@@ -76,12 +76,12 @@ export interface McpServer {
 export interface McpProbe {
   ok: boolean;
   ms: number /* int64 */;
-  server?: string;
-  version?: string;
-  error?: string;
-  auth_hint?: boolean;
-  at?: string;
-  tools?: string[];
+  server: string | null;
+  version: string | null;
+  error: string | null;
+  auth_hint: boolean | null;
+  at: string | null;
+  tools: string[] | null;
 }
 /**
  * ── git por tarea (port de task_git) ────────────────────────────────────
@@ -93,11 +93,11 @@ export interface RepoGit {
   dirty: boolean;
   last_subject: string;
   last_ts: number /* int64 */;
-  pr?: {
+  pr: {
     number: number /* int */;
     state: string;
     url: string;
-  };
+  } | null;
   pushed_direct: boolean;
 }
 export interface TaskGit {
@@ -153,7 +153,7 @@ export interface ThreadItem {
   k: string; // text | think | tool
   ts: number /* int64 */;
   t: string;
-  inp?: string;
+  inp: string | null;
 }
 export interface AgentDetail {
   id: string;
@@ -166,7 +166,7 @@ export interface AgentDetail {
   last_ts: number /* int64 */;
   elapsed: number /* int64 */;
   usage: Usage;
-  cost?: number /* float64 */;
+  cost: number /* float64 */ | null;
   thread: ThreadItem[];
 }
 export interface SessionDetail {
@@ -205,7 +205,7 @@ export interface Agent {
   idle: number /* int64 */;
   elapsed: number /* int64 */;
   usage: Usage;
-  cost?: number /* float64 */;
+  cost: number /* float64 */ | null;
   depth: number /* int */;
 }
 export interface Session {
@@ -217,7 +217,7 @@ export interface Session {
   peak: number /* int */;
   idle: number /* int64 */;
   tokens: Tokens;
-  cost?: number /* float64 */;
+  cost: number /* float64 */ | null;
   agents: Agent[];
   /**
    * LiveBy dice CÓMO sabemos que está viva: "herdr" = una terminal de herdr la
@@ -230,7 +230,7 @@ export interface Session {
    * cwd de la sesión: ancla su tarea (worktrees/<id>/) y se cruza con pane.cwd
    * de herdr. Ahora expuesto para agrupar sesiones dentro de su tarea.
    */
-  cwd?: string;
+  cwd: string | null;
 }
 export interface Tokens {
   out: number /* int64 */;
@@ -242,7 +242,7 @@ export interface Event {
   task: string;
   actor: string;
   summary: string;
-  ok?: boolean;
+  ok: boolean | null;
 }
 export interface Task {
   id: string;
@@ -270,7 +270,7 @@ export interface ModelCost {
   out: number /* int64 */;
   cache_read: number /* int64 */;
   cache_creation: number /* int64 */;
-  cost?: number /* float64 */;
+  cost: number /* float64 */ | null;
 }
 export interface Price {
   Input: number /* float64 */;
@@ -288,7 +288,7 @@ export interface Snapshot {
   events: Event[];
   tasks: Task[];
   tokens: Tokens;
-  cost?: number /* float64 */;
+  cost: number /* float64 */ | null;
   days: DayCost[];
   models: ModelCost[];
   prices: { [key: string]: PubP};
@@ -298,24 +298,24 @@ export interface Snapshot {
   mode: string;
   op: boolean;
   workspace: WsInfo;
-  toolbox?: Toolbox;
+  toolbox: Toolbox | null;
   mcp: McpServer[];
-  herdr?: any;
+  herdr: any | null;
   targets: Target[]; // máquinas remotas (VPS) por SSH
   archived_tasks: string[]; // tareas ocultas (el bus las revive si no se excluyen)
-  warning?: string;
+  warning: string | null;
   /**
    * Init es el estado del wizard de onboarding (initflow.PublicState) cuando
    * hay un init activo; `any` para no crear ciclo de imports con initflow.
    */
-  init?: any;
+  init: any | null;
   /**
    * Drafts: la ley propuesta y sin firmar (constituciones, specs, map) —
    * se ratifica desde el panel (OpRatify). Law: TODA la ley con estado
    * (el visor permanece tras firmar; re-excavable por cluster).
    */
-  drafts?: DraftDoc[];
-  law?: LawDoc[];
+  drafts: DraftDoc[] | null;
+  law: LawDoc[] | null;
 }
 export interface WsInfo {
   name: string;
@@ -344,5 +344,5 @@ export interface Target {
    * --workspace <path>`). El workspaceID es el mismo en ambas máquinas (se
    * deriva del git remote), sólo cambia la ruta. Opcional.
    */
-  path?: string;
+  path: string | null;
 }
