@@ -1,6 +1,8 @@
 # ADR-0006 — Auto-update: firmado, verificado, y supervisado por bash
 
-`status: ACCEPTED` · 2026-07-16
+`status: ACCEPTED_DESIGN_PARTIALLY_IMPLEMENTED` · 2026-07-16 · el selftest y
+la distribución por release/Homebrew existen; firma minisign y swap supervisado
+siguen pendientes.
 
 ## Contexto
 

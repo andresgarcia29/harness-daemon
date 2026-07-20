@@ -56,7 +56,8 @@ Si quieres conducir fase por fase, los comandos sueltos siguen ahí:
 Leyes con enforcement (hook o gate — no son sugerencias):
 push a main solo vía `scripts/ship.sh` · trabajo solo en worktrees
 (`make wt TASK=<id> REPOS="..."`) · trailer `Task:` en cada commit ·
-contratos expand/contract.
+contratos expand/contract · transiciones mediante `harness-policy.py` ·
+pruebas de aprobación ligadas al commit mediante `evidence.py`.
 
 ## Estructura
 
@@ -66,6 +67,8 @@ contratos expand/contract.
 | Ley del proyecto | `docs/constitution.md`, `docs/adr/`, `specs/` |
 | Agentes y comandos | `.claude/agents/`, `.claude/commands/` |
 | Estado por tarea | `tasks/<id>/` |
+| Política ejecutable | `harness-policy.json`, `scripts/harness-policy.py` |
+| Evidencia verificable | `scripts/evidence.py`, `tasks/<id>/evidence/` |
 | Política de modelos | `models.yaml` |
 | Decisiones de instalación | `harness-answers.yaml` |
 

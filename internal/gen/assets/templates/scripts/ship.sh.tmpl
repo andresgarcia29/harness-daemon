@@ -228,7 +228,9 @@ gate_evidence() {
       echo "   ✗ citado pero NADIE LO LEYÓ: $art"; unread=$((unread+1))
     fi
   done <<EOF
-$(jq -r '.compliance[]? | select(.covered==true) | .evidence // .test // empty' "$v" 2>/dev/null)
+$(jq -r '.compliance[]? | select(.covered==true) |
+  if (.tests? | type) == "array" then .tests[]
+  else (.evidence_path // .test // empty) end' "$v" 2>/dev/null)
 EOF
   if [ "$missing" -gt 0 ] || [ "$unread" -gt 0 ]; then
     echo "❌ la compliance matrix cita evidencia que no existe ($missing) o que nunca se leyó ($unread)"
@@ -252,6 +254,21 @@ check_verdict() {
          echo "   ↳ remediación: escribe el test faltante (ver .compliance[] con covered:false en $v) o pide al humano una excepción explícita"; exit 3; }
 }
 
+# El veredicto no es una afirmación libre: policy v1 comprueba estado, rondas
+# y separación de roles; evidence v1 liga cada resultado al HEAD exacto y al
+# hash de su salida. Ambos validadores son stdlib Python y fail-closed.
+gate_policy_and_evidence() {
+  gate "policy + evidencia v1"
+  local v="$WS/tasks/$TASK/verdict-$REPO.json"
+  local head
+  head="$(git rev-parse HEAD)"
+  python3 "$WS/scripts/harness-policy.py" --policy "$WS/harness-policy.json" \
+    validate-ship "$WS/tasks/$TASK" --commit "$head" --verdict "$v"
+  python3 "$WS/scripts/evidence.py" verify \
+    --task-dir "$WS/tasks/$TASK" --repo "$REPO" --commit "$head" \
+    --verdict "$v" --require-kind test
+}
+
 # ── Loop de ship ──────────────────────────────────────────────────────
 acquire_lock
 cd "$WT"
@@ -267,6 +284,7 @@ while [ "$attempt" -lt "$MAX_RETRY" ]; do
   run_security_gates
   check_verdict
   gate_evidence
+  gate_policy_and_evidence
   if git push origin HEAD:main; then
     sha="$(git rev-parse --short HEAD)"
     echo "{\"repo\":\"$REPO\",\"sha\":\"$sha\",\"shipped_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >> "$WS/tasks/$TASK/ship.log"
