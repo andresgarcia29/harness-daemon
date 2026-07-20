@@ -21,13 +21,13 @@ import (
 
 const activeWindow = 90 // s sin actividad → ya no "activo"
 
-type usage struct {
+type Usage struct {
 	In    int64 `json:"in"`
 	Out   int64 `json:"out"`
 	CRead int64 `json:"cache_read"`
 	CCrea int64 `json:"cache_creation"`
 }
-type agent struct {
+type Agent struct {
 	ID      string   `json:"id"`
 	Type    string   `json:"type"`
 	Desc    string   `json:"desc"`
@@ -37,11 +37,11 @@ type agent struct {
 	LastTS  int64    `json:"last_ts"`
 	Idle    int64    `json:"idle"`
 	Elapsed int64    `json:"elapsed"`
-	Usage   usage    `json:"usage"`
+	Usage   Usage    `json:"usage"`
 	Cost    *float64 `json:"cost"`
 	Depth   int      `json:"depth"`
 }
-type session struct {
+type Session struct {
 	ID      string   `json:"id"`
 	Short   string   `json:"short"`
 	Model   string   `json:"model"`
@@ -49,9 +49,9 @@ type session struct {
 	NActive int      `json:"n_active"`
 	Peak    int      `json:"peak"`
 	Idle    int64    `json:"idle"`
-	Tokens  tokens   `json:"tokens"`
+	Tokens  Tokens   `json:"tokens"`
 	Cost    *float64 `json:"cost"`
-	Agents  []agent  `json:"agents"`
+	Agents  []Agent  `json:"agents"`
 	// LiveBy dice CÓMO sabemos que está viva: "herdr" = una terminal de herdr la
 	// corre AHORA (verdad de campo); "recent" = el transcript se tocó hace poco
 	// pero herdr no lo confirma (terminó hace nada o corre fuera de herdr);
@@ -61,11 +61,11 @@ type session struct {
 	// de herdr. Ahora expuesto para agrupar sesiones dentro de su tarea.
 	Cwd string `json:"cwd,omitempty"`
 }
-type tokens struct {
+type Tokens struct {
 	Out   int64 `json:"out"`
 	CRead int64 `json:"cache_read"`
 }
-type event struct {
+type Event struct {
 	TS      string `json:"ts"`
 	Kind    string `json:"kind"`
 	Task    string `json:"task"`
@@ -73,27 +73,27 @@ type event struct {
 	Summary string `json:"summary"`
 	OK      *bool  `json:"ok,omitempty"`
 }
-type task struct {
+type Task struct {
 	ID          string   `json:"id"`
 	Title       string   `json:"title"`
 	Origin      string   `json:"origin"`
 	Phase       string   `json:"phase"`
 	Done        []string `json:"done"`
-	Verdicts    verdicts `json:"verdicts"`
+	Verdicts    Verdicts `json:"verdicts"`
 	Assumptions []string `json:"assumptions"`
 }
-type verdicts struct {
+type Verdicts struct {
 	Pass  int `json:"pass"`
 	Total int `json:"total"`
 }
-type dayCost struct {
+type DayCost struct {
 	Day      string             `json:"day"`
 	Cost     float64            `json:"cost"`
 	Out      int64              `json:"out"`
 	Unpriced bool               `json:"unpriced"`
 	ByModel  map[string]float64 `json:"by_model"`
 }
-type modelCost struct {
+type ModelCost struct {
 	Model string   `json:"model"`
 	In    int64    `json:"in"`
 	Out   int64    `json:"out"`
@@ -101,27 +101,27 @@ type modelCost struct {
 	CCrea int64    `json:"cache_creation"`
 	Cost  *float64 `json:"cost"`
 }
-type price struct {
+type Price struct {
 	Input, Output, CRead, CW5m, CW1h float64
 }
 
 // Snapshot es el objeto que /api/state y /api/stream devuelven.
 type Snapshot struct {
 	TS            int64            `json:"ts"`
-	Sessions      []session        `json:"sessions"`
-	Events        []event          `json:"events"`
-	Tasks         []task           `json:"tasks"`
-	Tokens        tokens           `json:"tokens"`
+	Sessions      []Session        `json:"sessions"`
+	Events        []Event          `json:"events"`
+	Tasks         []Task           `json:"tasks"`
+	Tokens        Tokens           `json:"tokens"`
 	Cost          *float64         `json:"cost"`
-	Days          []dayCost        `json:"days"`
-	Models        []modelCost      `json:"models"`
-	Prices        map[string]pubP  `json:"prices"`
+	Days          []DayCost        `json:"days"`
+	Models        []ModelCost      `json:"models"`
+	Prices        map[string]PubP  `json:"prices"`
 	Unpriced      []string         `json:"unpriced"`
 	Connections   map[string]bool  `json:"connections"`
 	Runs          []map[string]any `json:"runs"`
 	Mode          string           `json:"mode"`
 	Op            bool             `json:"op"`
-	Workspace     wsInfo           `json:"workspace"`
+	Workspace     WsInfo           `json:"workspace"`
 	Toolbox       *Toolbox         `json:"toolbox,omitempty"`
 	Mcp           []McpServer      `json:"mcp"`
 	Herdr         any              `json:"herdr,omitempty"`
@@ -137,16 +137,16 @@ type Snapshot struct {
 	Drafts []DraftDoc `json:"drafts,omitempty"`
 	Law    []LawDoc   `json:"law,omitempty"`
 }
-type wsInfo struct {
+type WsInfo struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 }
-type pubP struct {
+type PubP struct {
 	Input  float64 `json:"input"`
 	Output float64 `json:"output"`
 }
 
-func costOf(p price, u usage, ok bool) *float64 {
+func costOf(p Price, u Usage, ok bool) *float64 {
 	if !ok {
 		return nil
 	}
@@ -161,8 +161,8 @@ func costOf(p price, u usage, ok bool) *float64 {
 func EmptySnapshot() *Snapshot {
 	return &Snapshot{
 		Mode: "daemon", Op: true,
-		Sessions: []session{}, Events: []event{}, Tasks: []task{},
-		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
+		Sessions: []Session{}, Events: []Event{}, Tasks: []Task{},
+		Days: []DayCost{}, Models: []ModelCost{}, Prices: map[string]PubP{},
 		Unpriced: []string{}, Runs: []map[string]any{}, Connections: map[string]bool{},
 		Mcp: []McpServer{}, ArchivedTasks: []string{}, Targets: []Target{},
 	}
@@ -199,20 +199,20 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 	prices, _ := loadPrices(db)
 	snap := &Snapshot{
 		TS: now, Mode: "daemon", Op: true,
-		Sessions: []session{}, Events: []event{}, Tasks: []task{},
-		Days: []dayCost{}, Models: []modelCost{}, Prices: map[string]pubP{},
+		Sessions: []Session{}, Events: []Event{}, Tasks: []Task{},
+		Days: []DayCost{}, Models: []ModelCost{}, Prices: map[string]PubP{},
 		Unpriced: []string{}, Runs: loadRuns(wsPath), Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
 		Drafts:  ListDrafts(wsPath), Law: ListLawDocs(wsPath),
-		Workspace: wsInfo{Path: wsPath}, ArchivedTasks: []string{},
+		Workspace: WsInfo{Path: wsPath}, ArchivedTasks: []string{},
 	}
 	for m, p := range prices {
-		snap.Prices[m] = pubP{Input: p.Input, Output: p.Output}
+		snap.Prices[m] = PubP{Input: p.Input, Output: p.Output}
 	}
 
 	// ── agregados de calls por (sesión, agente) ──
 	type key struct{ s, a string }
-	au := map[key]*usage{}
+	au := map[key]*Usage{}
 	amodel := map[key]string{}
 	amodelTS := map[key]int64{}
 	// primer/último ts REAL de cada agente = min/max de SUS llamadas. El
@@ -221,8 +221,8 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 	// es el de los records, jamás el del archivo.
 	aFirst := map[key]int64{}
 	aLast := map[key]int64{}
-	dayAgg := map[string]*dayCost{}
-	modAgg := map[string]*modelCost{}
+	dayAgg := map[string]*DayCost{}
+	modAgg := map[string]*ModelCost{}
 	unpriced := map[string]bool{}
 	var totOut, totCRead int64
 	var totCost float64
@@ -243,7 +243,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		}
 		k := key{sid, aid}
 		if au[k] == nil {
-			au[k] = &usage{}
+			au[k] = &Usage{}
 		}
 		u := au[k]
 		u.In += in
@@ -265,10 +265,10 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		// agregado por día × modelo
 		day := time.Unix(ts, 0).UTC().Format("2006-01-02")
 		if dayAgg[day] == nil {
-			dayAgg[day] = &dayCost{Day: day, ByModel: map[string]float64{}}
+			dayAgg[day] = &DayCost{Day: day, ByModel: map[string]float64{}}
 		}
 		p, ok := prices[model]
-		cu := usage{In: in, Out: out, CRead: cr, CCrea: cw5 + cw1}
+		cu := Usage{In: in, Out: out, CRead: cr, CCrea: cw5 + cw1}
 		c := costOf(p, cu, ok)
 		dayAgg[day].Out += out
 		if c == nil {
@@ -281,7 +281,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		}
 		// agregado por modelo
 		if modAgg[model] == nil {
-			modAgg[model] = &modelCost{Model: model}
+			modAgg[model] = &ModelCost{Model: model}
 		}
 		ma := modAgg[model]
 		ma.In += in
@@ -318,7 +318,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		if err != nil {
 			continue
 		}
-		var agents []agent
+		var agents []Agent
 		var intervals [][2]int64
 		var sOut, sCRead int64
 		var sCost float64
@@ -332,7 +332,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 				continue
 			}
 			k := key{sid, aid}
-			u := usage{}
+			u := Usage{}
 			if au[k] != nil {
 				u = *au[k]
 			}
@@ -353,7 +353,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 			if first > 0 && lst > 0 {
 				el = lst - first
 			}
-			ag := agent{
+			ag := Agent{
 				ID: aid, Type: typ, Desc: desc, Model: model, Active: active,
 				FirstTS: first, LastTS: lst, Idle: now - lst, Elapsed: el,
 				Usage: u, Cost: c, Depth: depth,
@@ -383,10 +383,10 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		if sCostKnown {
 			scost = &sCost
 		}
-		snap.Sessions = append(snap.Sessions, session{
+		snap.Sessions = append(snap.Sessions, Session{
 			ID: sid, Short: short(sid), Model: mainModel, NAgents: len(agents),
 			NActive: nActive, Peak: peakConcurrency(intervals), Idle: now - sessLast[sid],
-			Tokens: tokens{Out: sOut, CRead: sCRead}, Cost: scost, Agents: agents,
+			Tokens: Tokens{Out: sOut, CRead: sCRead}, Cost: scost, Agents: agents,
 			Cwd: sessCwd[sid],
 		})
 	}
@@ -395,7 +395,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 	er, err := db.Query(`SELECT ts, kind, COALESCE(task_id,''), COALESCE(actor,''),
 		COALESCE(summary,''), ok FROM events WHERE workspace_id = ? ORDER BY ts DESC LIMIT 200`, workspaceID)
 	if err == nil {
-		var evs []event
+		var evs []Event
 		for er.Next() {
 			var ts int64
 			var kind, tid, actor, summary string
@@ -403,7 +403,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 			if er.Scan(&ts, &kind, &tid, &actor, &summary, &ok) != nil {
 				continue
 			}
-			e := event{TS: time.Unix(ts, 0).UTC().Format(time.RFC3339), Kind: kind,
+			e := Event{TS: time.Unix(ts, 0).UTC().Format(time.RFC3339), Kind: kind,
 				Task: tid, Actor: actor, Summary: summary}
 			if ok.Valid {
 				b := ok.Int64 != 0
@@ -425,7 +425,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		for tr.Next() {
 			var id, title, origin, phase string
 			if tr.Scan(&id, &title, &origin, &phase) == nil {
-				snap.Tasks = append(snap.Tasks, task{
+				snap.Tasks = append(snap.Tasks, Task{
 					ID: id, Title: title, Origin: origin, Phase: phase,
 					Done: []string{}, Assumptions: []string{},
 				})
@@ -451,13 +451,13 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 	}
 	for _, m := range modAgg {
 		p, ok := prices[m.Model]
-		m.Cost = costOf(p, usage{In: m.In, Out: m.Out, CRead: m.CRead, CCrea: m.CCrea}, ok)
+		m.Cost = costOf(p, Usage{In: m.In, Out: m.Out, CRead: m.CRead, CCrea: m.CCrea}, ok)
 		snap.Models = append(snap.Models, *m)
 	}
 	for u := range unpriced {
 		snap.Unpriced = append(snap.Unpriced, u)
 	}
-	snap.Tokens = tokens{Out: totOut, CRead: totCRead}
+	snap.Tokens = Tokens{Out: totOut, CRead: totCRead}
 	if len(snap.Models) > 0 {
 		snap.Cost = &totCost
 	}
@@ -471,8 +471,8 @@ func short(s string) string {
 	return s
 }
 
-func loadPrices(db store.Queryer) (map[string]price, error) {
-	out := map[string]price{}
+func loadPrices(db store.Queryer) (map[string]Price, error) {
+	out := map[string]Price{}
 	rows, err := db.Query(`SELECT model, input, output,
 		COALESCE(cache_read,0), COALESCE(cache_write_5m,0), COALESCE(cache_write_1h,0)
 		FROM prices WHERE valid_from = 0`)
@@ -482,7 +482,7 @@ func loadPrices(db store.Queryer) (map[string]price, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var m string
-		var p price
+		var p Price
 		if rows.Scan(&m, &p.Input, &p.Output, &p.CRead, &p.CW5m, &p.CW1h) == nil {
 			out[m] = p
 		}
@@ -521,8 +521,8 @@ func peakConcurrency(iv [][2]int64) int {
 	return peak
 }
 
-func sortedDays(m map[string]*dayCost) []*dayCost {
-	out := make([]*dayCost, 0, len(m))
+func sortedDays(m map[string]*DayCost) []*DayCost {
+	out := make([]*DayCost, 0, len(m))
 	for _, d := range m {
 		out = append(out, d)
 	}

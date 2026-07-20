@@ -20,32 +20,32 @@ import (
 	"github.com/andresgarcia29/harness-daemon/internal/store"
 )
 
-type cmdDoc struct {
+type CmdDoc struct {
 	Name string `json:"name"`
 	Desc string `json:"desc"`
 	Args string `json:"args"`
 }
-type agentDoc struct {
+type AgentDoc struct {
 	Name string `json:"name"`
 	Desc string `json:"desc"`
 }
-type makeDoc struct {
+type MakeDoc struct {
 	Target string `json:"target"`
 	Desc   string `json:"desc"`
 }
-type skillDoc struct {
+type SkillDoc struct {
 	Name string `json:"name"`
 	Desc string `json:"desc"`
 	OK   bool   `json:"ok"`
 }
 type Toolbox struct {
 	Version  string     `json:"version"`
-	Commands []cmdDoc   `json:"commands"`
-	Agents   []agentDoc `json:"agents"`
-	Make     []makeDoc  `json:"make"`
+	Commands []CmdDoc   `json:"commands"`
+	Agents   []AgentDoc `json:"agents"`
+	Make     []MakeDoc  `json:"make"`
 	Gates    []string   `json:"gates"`
 	Hooks    []string   `json:"hooks"`
-	Skills   []skillDoc `json:"skills"`
+	Skills   []SkillDoc `json:"skills"`
 }
 type McpServer struct {
 	Name      string    `json:"name"`
@@ -111,8 +111,8 @@ func clip(s string, n int) string {
 // BuildToolbox arma el inventario del workspace. nil si el workspace no tiene
 // harness (sin commands, sin Makefile) — el frontend enseña su vacío.
 func BuildToolbox(ws string) *Toolbox {
-	tb := &Toolbox{Commands: []cmdDoc{}, Agents: []agentDoc{}, Make: []makeDoc{},
-		Gates: []string{}, Hooks: []string{}, Skills: []skillDoc{}}
+	tb := &Toolbox{Commands: []CmdDoc{}, Agents: []AgentDoc{}, Make: []MakeDoc{},
+		Gates: []string{}, Hooks: []string{}, Skills: []SkillDoc{}}
 	if b, err := os.ReadFile(filepath.Join(ws, ".harness-version")); err == nil {
 		tb.Version = strings.TrimSpace(string(b))
 	}
@@ -120,7 +120,7 @@ func BuildToolbox(ws string) *Toolbox {
 	sort.Strings(cmds)
 	for _, f := range cmds {
 		fm := frontmatter(f)
-		tb.Commands = append(tb.Commands, cmdDoc{
+		tb.Commands = append(tb.Commands, CmdDoc{
 			Name: "/" + strings.TrimSuffix(filepath.Base(f), ".md"),
 			Desc: fm["description"], Args: fm["argument-hint"]})
 	}
@@ -128,7 +128,7 @@ func BuildToolbox(ws string) *Toolbox {
 	sort.Strings(ags)
 	for _, f := range ags {
 		fm := frontmatter(f)
-		tb.Agents = append(tb.Agents, agentDoc{
+		tb.Agents = append(tb.Agents, AgentDoc{
 			Name: strings.TrimSuffix(filepath.Base(f), ".md"), Desc: clip(fm["description"], 180)})
 	}
 	sk, _ := filepath.Glob(filepath.Join(ws, ".claude", "skills", "*"))
@@ -141,14 +141,14 @@ func BuildToolbox(ws string) *Toolbox {
 			if name == "" {
 				name = filepath.Base(d)
 			}
-			tb.Skills = append(tb.Skills, skillDoc{Name: name, Desc: clip(fm["description"], 180), OK: len(fm) > 0})
+			tb.Skills = append(tb.Skills, SkillDoc{Name: name, Desc: clip(fm["description"], 180), OK: len(fm) > 0})
 		}
 	}
 	if f, err := os.Open(filepath.Join(ws, "Makefile")); err == nil {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			if m := makeRe.FindStringSubmatch(sc.Text()); m != nil {
-				tb.Make = append(tb.Make, makeDoc{Target: m[1], Desc: strings.TrimSpace(m[2])})
+				tb.Make = append(tb.Make, MakeDoc{Target: m[1], Desc: strings.TrimSpace(m[2])})
 			}
 		}
 		f.Close()
@@ -268,7 +268,7 @@ func BuildMcp(ws string) []McpServer {
 }
 
 // ── git por tarea (port de task_git) ────────────────────────────────────
-type repoGit struct {
+type RepoGit struct {
 	Repo        string `json:"repo"`
 	Branch      string `json:"branch"`
 	Ahead       int    `json:"ahead"`
@@ -283,7 +283,7 @@ type repoGit struct {
 	PushedDirect bool `json:"pushed_direct"`
 }
 type TaskGit struct {
-	Repos []repoGit `json:"repos"`
+	Repos []RepoGit `json:"repos"`
 	Read  []string  `json:"read"`
 }
 
@@ -302,7 +302,7 @@ func git(dir string, args ...string) string {
 }
 
 func BuildTaskGit(ws, taskID string) TaskGit {
-	tg := TaskGit{Repos: []repoGit{}, Read: []string{}}
+	tg := TaskGit{Repos: []RepoGit{}, Read: []string{}}
 	if strings.ContainsAny(taskID, `/\`) {
 		return tg
 	}
@@ -341,7 +341,7 @@ func BuildTaskGit(ws, taskID string) TaskGit {
 				}
 			}
 		}
-		rg := repoGit{Repo: name, Branch: branch, Ahead: ahead, Dirty: dirty,
+		rg := RepoGit{Repo: name, Branch: branch, Ahead: ahead, Dirty: dirty,
 			LastSubject: subj, LastTS: cts, PushedDirect: ahead == 0 && subj != ""}
 		if ghErr == nil && branch != "?" && branch != "main" {
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
@@ -403,8 +403,8 @@ func BuildTaskGit(ws, taskID string) TaskGit {
 }
 
 // TaskEvents: TODOS los eventos del bus de una tarea, desde SQLite.
-func TaskEvents(db store.Queryer, wsID, taskID string) []event {
-	out := []event{}
+func TaskEvents(db store.Queryer, wsID, taskID string) []Event {
+	out := []Event{}
 	if strings.ContainsAny(taskID, `/\`) {
 		return out
 	}
@@ -421,7 +421,7 @@ func TaskEvents(db store.Queryer, wsID, taskID string) []event {
 		if rows.Scan(&ts, &kind, &actor, &summary, &ok) != nil {
 			continue
 		}
-		e := event{TS: time.Unix(ts, 0).UTC().Format(time.RFC3339), Kind: kind,
+		e := Event{TS: time.Unix(ts, 0).UTC().Format(time.RFC3339), Kind: kind,
 			Task: taskID, Actor: actor, Summary: summary}
 		if ok.Valid {
 			b := ok.Int64 != 0
