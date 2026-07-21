@@ -146,6 +146,26 @@ harness ui -d              # solo lo levanta en background, sin abrir navegador
 harness ui --port 8080     # elige puerto (default: config.json > 7180)
 ```
 
+### Agentes de tarea (Nueva tarea → selector)
+
+El form «Nueva tarea» ofrece un **agente** (CLI) y un **modo**. Built-in:
+`claude` (usa `/auto`, corre headless o en tab de herdr), `opencode` y `kimi`
+(prompt crudo, solo tab de herdr). Se personaliza en `config.json` sin tocar el
+binario (`GET /api/task-agents` los expone):
+
+```json
+{
+  "task_agents": [
+    { "name": "claude",   "bin": "claude",   "auto": true, "headless": true },
+    { "name": "opencode", "bin": "opencode" },
+    { "name": "kimi",     "bin": "kimi" }
+  ]
+}
+```
+
+`auto`: pasa `/auto <id>` (pipeline del harness, solo Claude Code). `headless`:
+soporta `-p` en segundo plano; si no, solo corre en un tab de herdr (visible).
+
 ## Relación con `harness-creator`
 
 Repos separados, a propósito: otro lenguaje, otro ciclo de vida, otra audiencia
