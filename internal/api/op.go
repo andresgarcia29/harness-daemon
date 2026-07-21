@@ -30,6 +30,7 @@ import (
 
 	_ "github.com/lib/pq" // driver Postgres (validar DSN); registra "postgres"
 
+	"github.com/andresgarcia29/harness-daemon/internal/config"
 	"github.com/andresgarcia29/harness-daemon/internal/herdr"
 	"github.com/andresgarcia29/harness-daemon/internal/ident"
 	"github.com/andresgarcia29/harness-daemon/internal/redact"
@@ -137,6 +138,11 @@ func (o *Op) launch(args []string, logname string) (int, error) {
 	if bin == "" {
 		bin = "claude"
 	}
+	return o.launchBin(bin, args, logname)
+}
+
+// launchBin es launch con el ejecutable explícito — para el selector de agente.
+func (o *Op) launchBin(bin string, args []string, logname string) (int, error) {
 	path, err := exec.LookPath(bin)
 	if err != nil {
 		return 0, fmt.Errorf("no encuentro el CLI '%s' en PATH — el plano de operar lanza agentes reales y lo necesita", bin)
@@ -287,23 +293,111 @@ func (o *Op) OpTask(rw http.ResponseWriter, r *http.Request) {
 		fail(rw, 500, err.Error())
 		return
 	}
-	sid := newUUID()
 	target := tid
 	if origin == "ticket" {
 		target = ticket
 	}
-	args := []string{"-p", "/auto " + target, "--session-id", sid}
+	// Selector de agente + modo. Default: claude en headless (el de siempre).
+	agent, aok := config.FindTaskAgent(s(b, "agent"))
+	if !aok {
+		fail(rw, 400, "agente desconocido: "+s(b, "agent"))
+		return
+	}
+	mode := s(b, "mode")
+	if mode == "" {
+		mode = "headless"
+	}
+	// El bin efectivo del agente. claude respeta HARNESS_CLAUDE_BIN (test/escape).
+	bin := agent.Bin
+	if agent.Name == "claude" {
+		if e := os.Getenv("HARNESS_CLAUDE_BIN"); e != "" {
+			bin = e
+		}
+	}
+	// El prompt: `/auto <id>` si el agente lo soporta (Claude Code); si no, el
+	// prompt crudo que escribió el humano (opencode/kimi no conocen /auto).
+	prompt := "/auto " + target
+	if !agent.Auto {
+		prompt = strings.TrimSpace(body)
+		if prompt == "" {
+			fail(rw, 400, "el agente '"+agent.Name+"' no usa /auto: escribe un prompt en el contexto")
+			return
+		}
+	}
+
+	// Modo terminal: abre un tab de herdr y lanza el agente ahí (visible).
+	if mode == "herdr" {
+		c, cok := herdrClientFor(rw, b)
+		if !cok {
+			return
+		}
+		pane, err := o.launchHerdr(c, bin, prompt, tid)
+		if err != nil {
+			fail(rw, 400, err.Error())
+			return
+		}
+		o.recordRun(tid, "", 0, "auto")
+		o.emit("phase", "intake — tarea creada y lanzada en herdr ("+agent.Name+" · pane "+pane+")", tid)
+		writeJSON(rw, 200, map[string]any{"ok": true, "id": tid, "agent": agent.Name, "mode": "herdr", "pane": pane})
+		return
+	}
+
+	// Modo headless: solo agentes que lo soportan (hoy, claude con -p/--session-id).
+	if !agent.Headless {
+		fail(rw, 400, "el agente '"+agent.Name+"' solo corre en modo terminal (mode: herdr)")
+		return
+	}
+	sid := newUUID()
+	args := []string{"-p", prompt, "--session-id", sid}
 	if m := s(b, "model"); m != "" {
 		args = append(args, "--model", m)
 	}
-	pid, err := o.launch(args, tid+".log")
+	pid, err := o.launchBin(bin, args, tid+".log")
 	if err != nil {
 		fail(rw, 400, err.Error())
 		return
 	}
 	o.recordRun(tid, sid, pid, "auto")
 	o.emit("phase", "intake — tarea creada desde el panel y lanzada (sesión "+sid[:8]+"…)", tid)
-	writeJSON(rw, 200, map[string]any{"ok": true, "id": tid, "session": sid, "pid": pid})
+	writeJSON(rw, 200, map[string]any{"ok": true, "id": tid, "session": sid, "pid": pid, "agent": agent.Name, "mode": "headless"})
+}
+
+// launchHerdr abre un workspace nuevo en herdr (cwd = raíz del workspace del
+// harness), resuelve su terminal y ejecuta ahí el CLI del agente con el prompt.
+// Devuelve el pane_id. El comando se ejecuta vía `pane run` (herdr).
+func (o *Op) launchHerdr(c herdr.Client, bin, prompt, label string) (string, error) {
+	if !c.Snapshot().Available {
+		return "", fmt.Errorf("herdr no está corriendo")
+	}
+	wsID, err := c.WorkspaceCreate(label, o.WS)
+	if err != nil {
+		return "", fmt.Errorf("no pude crear el workspace de herdr: %w", err)
+	}
+	var pane string // el pane tarda un instante en aparecer en el snapshot
+	for i := 0; i < 20 && pane == ""; i++ {
+		for _, p := range c.Snapshot().Panes {
+			if p.WorkspaceID == wsID {
+				pane = p.PaneID
+				break
+			}
+		}
+		if pane == "" {
+			time.Sleep(150 * time.Millisecond)
+		}
+	}
+	if pane == "" {
+		return "", fmt.Errorf("herdr creó el workspace pero no encuentro su terminal")
+	}
+	if err := c.PaneSend(pane, bin+" "+shellQuote(prompt)); err != nil {
+		return "", fmt.Errorf("no pude lanzar el agente en la terminal: %w", err)
+	}
+	return pane, nil
+}
+
+// shellQuote envuelve en comillas simples para que el prompt (con espacios,
+// slashes) llegue como UN argumento al CLI al ejecutarse en la terminal.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // OpRespond reanuda una sesión de Claude Code con texto (claude --resume).

@@ -493,6 +493,12 @@ func run(port int, wsPath string, setup bool) int {
 			"api_version": APIVersion,
 		})
 	})
+	// /api/task-agents: los CLIs que el form de «Nueva tarea» ofrece (config >
+	// built-in). El panel lo lee para poblar el selector de agente.
+	mux.HandleFunc("/api/task-agents", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(config.TaskAgents())
+	})
 	// /api/stats: la prueba de vida del colector es que estos números CRECEN.
 	mux.HandleFunc("/api/stats", func(rw http.ResponseWriter, r *http.Request) {
 		counts, err := st.Counts()

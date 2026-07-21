@@ -121,6 +121,26 @@ func TestOpTaskCompleto(t *testing.T) {
 	}
 }
 
+// TestOpTaskAgentSelect fija la lógica del selector de agente/modo.
+func TestOpTaskAgentSelect(t *testing.T) {
+	op, _ := newOpT(t)
+	// agente desconocido → 400
+	rr := post(t, op.OpTask, op.Token, map[string]any{"title": "x", "agent": "nope"})
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), "desconocido") {
+		t.Fatalf("agente desconocido: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// agente sin /auto y sin prompt → 400 pide prompt
+	rr = post(t, op.OpTask, op.Token, map[string]any{"title": "x", "agent": "opencode"})
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), "prompt") {
+		t.Fatalf("opencode sin prompt: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// agente sin headless (opencode) en modo headless → 400 solo terminal
+	rr = post(t, op.OpTask, op.Token, map[string]any{"title": "x", "agent": "opencode", "context": "haz algo"})
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), "terminal") {
+		t.Fatalf("opencode headless: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestOpRespondResume(t *testing.T) {
 	op, _ := newOpT(t)
 	log := stubClaude(t)
