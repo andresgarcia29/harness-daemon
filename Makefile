@@ -1,8 +1,11 @@
 VERSION ?= 0.1.0
 LDFLAGS := -X main.Version=$(VERSION)
 # harness-ui es la fuente de verdad del panel (ADR-0003, repo aparte). Su dist
-# se embebe aquí vía //go:embed internal/webui/dist. `make ui` lo reconstruye.
+# se embebe aquí vía //go:embed internal/webui/dist. `make ui` lo reconstruye
+# (preview local); el RELEASE usa `make release`, que sincroniza desde el
+# installer — el mismo path que verifica el gate de release.yml.
 UI_REPO ?= $(HOME)/Workspace/harness-ui
+INSTALLER ?= $(HOME)/Workspace/harness-installer
 .DEFAULT_GOAL := help
 
 help: ## esta ayuda
@@ -45,4 +48,19 @@ dist: ## binarios para las 4 plataformas (lo que consume el plugin)
 clean: ## limpia
 	@rm -rf bin dist
 
-.PHONY: help ui build test run init status stop dist clean
+release: ## corta un release: sync assets + tests + tag + push (VERSION=x.y.z)
+	@[ "$(VERSION)" != "0.1.0" ] || { echo "→ falta VERSION, p.ej: make release VERSION=0.58.0"; exit 1; }
+	@[ -d "$(INSTALLER)" ] || { echo "→ no encuentro harness-creator en $(INSTALLER) (set INSTALLER=)"; exit 1; }
+	@[ -z "$$(git status --porcelain)" ] || { echo "→ árbol sucio: commitea o limpia antes del release"; exit 1; }
+	@echo "→ 1/3 sync de assets embebidos desde el installer (el path que verifica el gate)…"
+	@./scripts/sync-assets.sh "$(INSTALLER)"
+	@git add internal/webui/dist internal/gen/assets
+	@git diff --cached --quiet || git commit -q -m "release: v$(VERSION) — sync de assets desde harness-creator"
+	@echo "→ 2/3 tests…"
+	@$(MAKE) --no-print-directory test
+	@echo "→ 3/3 tag + push…"
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@git push origin HEAD "refs/tags/v$(VERSION)"
+	@echo "  ✓ v$(VERSION) pusheado → release.yml construye las 4 plataformas y publica al tap (brew)"
+
+.PHONY: help ui build test run init status stop dist clean release
