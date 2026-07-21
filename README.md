@@ -103,6 +103,37 @@ por defecto de Opus: corriendo GLM te habría cobrado tarifa de Opus y te lo
 habría enseñado con dos decimales, como si fuera un dato. Un número inventado
 con aspecto de hecho es peor que un hueco honesto.
 
+## Release
+
+`brew install harness` trae daemon + panel en **un** binario. El panel viaja
+embebido (`//go:embed internal/webui/dist`), así que cortar un release es
+hornear ese embed fresco y taggear. Un comando:
+
+```bash
+make release VERSION=0.58.0
+```
+
+Qué hace: sincroniza los assets embebidos desde el installer con
+`scripts/sync-assets.sh` (el **mismo path** que el gate de `release.yml`
+verifica con `--check`), corre los tests, commitea, taggea `v0.58.0` y lo
+pushea. El tag dispara `release.yml`: construye las 4 plataformas, publica el
+release y actualiza la fórmula en el tap (`brew`).
+
+**Si cambiaste el panel**, actualiza primero el dist del installer desde
+harness-ui (la cadena es `harness-ui → harness-creator → harness-daemon`):
+
+```bash
+# en el repo del installer (harness-creator):
+bash scripts/sync-ui.sh          # rebuild del dist desde harness-ui
+git commit -am "sync panel" && git push
+# luego, aquí:
+make release VERSION=0.58.0
+```
+
+`make ui` reconstruye el embed directo desde harness-ui — es **preview local**;
+el release siempre pasa por el installer (por el gate). `make release` cubre el
+último salto; `sync-ui.sh` cubre el primero cuando la UI cambió.
+
 ## Relación con `harness-creator`
 
 Repos separados, a propósito: otro lenguaje, otro ciclo de vida, otra audiencia
