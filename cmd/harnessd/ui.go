@@ -11,9 +11,16 @@ import (
 
 // uiCmd — `harness ui`: asegura el daemon en el puerto del panel (flag >
 // config.json > 7180) y abre el navegador. Es `ensure` con azúcar: la puerta
-// de entrada humana al panel sin recordar puertos.
-func uiCmd(flagPort int, ws string, noOpen bool) int {
+// de entrada humana al panel sin recordar puertos. El daemon siempre queda en
+// background (Setsid). Con reload, reinicia el vivo para tomar una versión
+// nueva; con noOpen (incluye -d/--daemon), solo lo levanta sin navegador.
+func uiCmd(flagPort int, ws string, noOpen bool, reload bool) int {
 	port := config.ResolveUIPort(flagPort)
+	if reload {
+		if rc := reloadDaemon(port); rc != 0 {
+			return rc
+		}
+	}
 	if rc := ensure(port, ws); rc != 0 {
 		return rc
 	}

@@ -134,6 +134,18 @@ make release VERSION=0.58.0
 el release siempre pasa por el installer (por el gate). `make release` cubre el
 último salto; `sync-ui.sh` cubre el primero cuando la UI cambió.
 
+### Actualizar el panel (usuario)
+
+El daemon corre en background y sirve el panel. Tras un `brew upgrade harness`,
+el proceso viejo sigue vivo con la versión anterior — por eso a veces ves la UI
+vieja. Un comando lo reinicia con el binario nuevo:
+
+```bash
+harness ui --reload        # para el viejo + arranca el nuevo + abre el panel
+harness ui -d              # solo lo levanta en background, sin abrir navegador
+harness ui --port 8080     # elige puerto (default: config.json > 7180)
+```
+
 ## Relación con `harness-creator`
 
 Repos separados, a propósito: otro lenguaje, otro ciclo de vida, otra audiencia
