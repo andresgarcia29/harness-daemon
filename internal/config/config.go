@@ -21,6 +21,45 @@ const DefaultUIPort = 7180
 
 type Config struct {
 	UIPort int `json:"ui_port,omitempty"`
+	// TaskAgents: los CLIs de agente que el panel ofrece al crear una tarea.
+	// Vacío → los built-in (ver TaskAgents()). Se extiende en config.json sin
+	// tocar el binario.
+	TaskAgents []TaskAgent `json:"task_agents,omitempty"`
+}
+
+// TaskAgent describe un CLI de agente lanzable desde el panel.
+type TaskAgent struct {
+	Name     string `json:"name"`               // etiqueta en la UI (ej: "claude")
+	Bin      string `json:"bin"`                // ejecutable en PATH
+	Auto     bool   `json:"auto,omitempty"`     // pasa `/auto <id>` (Claude Code); si no, prompt crudo
+	Headless bool   `json:"headless,omitempty"` // soporta `-p` headless; si no, solo tab de herdr
+}
+
+// TaskAgents devuelve el registro configurado, o los built-in si no hay ninguno.
+// claude es el único con soporte completo (auto + headless); opencode/kimi
+// corren en un tab de herdr con el prompt crudo.
+func TaskAgents() []TaskAgent {
+	if c := Load(); len(c.TaskAgents) > 0 {
+		return c.TaskAgents
+	}
+	return []TaskAgent{
+		{Name: "claude", Bin: "claude", Auto: true, Headless: true},
+		{Name: "opencode", Bin: "opencode"},
+		{Name: "kimi", Bin: "kimi"},
+	}
+}
+
+// FindTaskAgent resuelve un agente por nombre (default "claude" si name == "").
+func FindTaskAgent(name string) (TaskAgent, bool) {
+	if name == "" {
+		name = "claude"
+	}
+	for _, a := range TaskAgents() {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return TaskAgent{}, false
 }
 
 func Path() string { return filepath.Join(ident.ConfigDir(), "config.json") }
