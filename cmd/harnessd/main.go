@@ -92,6 +92,9 @@ func main() {
 	ws := fs.String("workspace", ".", "workspace a observar")
 	noOpen := fs.Bool("no-open", false, "no abrir el navegador")
 	setup := fs.Bool("setup", false, "arranca sin workspace: el wizard de init lo fija (ADR-0011)")
+	reload := fs.Bool("reload", false, "ui: reinicia el panel para tomar una versión nueva (tras brew upgrade / harness update)")
+	daemon := fs.Bool("daemon", false, "ui: corre en background sin abrir el navegador")
+	fs.BoolVar(daemon, "d", false, "alias de --daemon")
 	_ = fs.Parse(rest)
 	dport := *port
 	if dport == 0 {
@@ -114,7 +117,7 @@ func main() {
 	case "stop":
 		os.Exit(stop(findDaemonPort(*port)))
 	case "ui":
-		os.Exit(uiCmd(*port, *ws, *noOpen))
+		os.Exit(uiCmd(*port, *ws, *noOpen || *daemon, *reload))
 	case "init":
 		os.Exit(initCmd(*port, *noOpen))
 	case "config":
@@ -150,7 +153,10 @@ func usage() {
 
 Panel:
   harness ui          asegura el daemon y abre el panel (puerto: --port >
-                      config.json > 7180)
+                      config.json > 7180). Siempre en background.
+                      --reload  reinicia para tomar una versión nueva
+                                (tras 'brew upgrade harness')
+                      -d/--daemon  solo lo levanta, sin abrir el navegador
   harness config      muestra la config · harness config set ui_port <n>
 
 Daemon (también bajo el namespace «harness daemon <cmd>»):
@@ -165,6 +171,7 @@ Daemon (también bajo el namespace «harness daemon <cmd>»):
   harness snapshot    imprime el snapshot del workspace como JSON
 
 Flags: --port (daemon: 7718 · panel: 7180) --workspace (.) --no-open
+       --reload (ui) --daemon/-d (ui)
 `)
 }
 
@@ -907,6 +914,27 @@ func status(port int) int {
 	fmt.Printf("  arriba desde %s\n", time.Unix(h.Started, 0).Format(time.RFC3339))
 	fmt.Printf("  db %s\n", h.DB)
 	return 0
+}
+
+// reloadDaemon para el daemon en `port` (si hay) y espera a que libere el
+// puerto, para que el siguiente `ensure` arranque el binario ACTUAL — así
+// `harness ui --reload` toma la versión nueva tras un `brew upgrade` o un
+// `harness update`. Sin daemon corriendo, no hay nada que reiniciar.
+func reloadDaemon(port int) int {
+	if _, err := lock.Probe(port); err != nil {
+		return 0
+	}
+	if rc := stop(port); rc != 0 {
+		return rc
+	}
+	for i := 0; i < 30; i++ { // esperar a que el proceso viejo suelte el puerto
+		time.Sleep(100 * time.Millisecond)
+		if _, err := lock.Probe(port); err != nil {
+			return 0
+		}
+	}
+	fmt.Fprintf(os.Stderr, "❌ el daemon viejo en %d no soltó el puerto en 3s\n", port)
+	return 1
 }
 
 func stop(port int) int {
