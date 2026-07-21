@@ -48,14 +48,14 @@ const (
 	mcpToolsList   = `{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n"
 )
 
-type mcpConf struct {
+type McpConf struct {
 	Command string
 	Args    []string
 	Env     map[string]string
 }
 
-func readMcpConfig(ws string) map[string]mcpConf {
-	out := map[string]mcpConf{}
+func readMcpConfig(ws string) map[string]McpConf {
+	out := map[string]McpConf{}
 	b, err := os.ReadFile(filepath.Join(ws, ".mcp.json"))
 	if err != nil {
 		return out
@@ -71,7 +71,7 @@ func readMcpConfig(ws string) map[string]mcpConf {
 		return out
 	}
 	for n, sv := range cfg.Servers {
-		out[n] = mcpConf{Command: sv.Command, Args: sv.Args, Env: sv.Env}
+		out[n] = McpConf{Command: sv.Command, Args: sv.Args, Env: sv.Env}
 	}
 	return out
 }
@@ -88,7 +88,7 @@ func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
 	sem := make(chan struct{}, 4)
 	for name, sv := range servers {
 		wg.Add(1)
-		go func(name string, sv mcpConf) {
+		go func(name string, sv McpConf) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -110,10 +110,10 @@ func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
 // un secreto inyectado por env si aplica) ANTES de persistir nada. Mismo
 // handshake JSON-RPC honesto que OpProbeMcp.
 func ProbeMcpCommand(ws, command string, args []string, env map[string]string) McpProbe {
-	return probeMcpServer(ws, mcpConf{Command: command, Args: args, Env: env})
+	return probeMcpServer(ws, McpConf{Command: command, Args: args, Env: env})
 }
 
-func probeMcpServer(ws string, sv mcpConf) McpProbe {
+func probeMcpServer(ws string, sv McpConf) McpProbe {
 	start := time.Now()
 	p := McpProbe{At: time.Now().UTC().Format(time.RFC3339)}
 	cmd := sv.Command

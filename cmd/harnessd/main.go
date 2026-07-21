@@ -37,6 +37,13 @@ import (
 // Version la inyecta el build: -ldflags "-X main.Version=0.1.0"
 var Version = "dev"
 
+// APIVersion es la versión del CONTRATO HTTP daemon↔UI, independiente de la
+// versión del binario: sube SOLO en cambios breaking del API. Habilita el
+// handshake de la UI de fleet (ADR-0003 del workspace corvux): la UI compara
+// este major al conectar y marca "incompatible" un daemon con otro major, ya
+// que el transporte SSH no gatea versiones.
+const APIVersion = "1"
+
 const defaultPort = 7718
 
 func main() {
@@ -468,6 +475,17 @@ func run(port int, wsPath string, setup bool) int {
 		rw.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(rw).Encode(health)
 	})
+	// /api/version: handshake del contrato. api_version es el major del API
+	// HTTP (no del binario); la UI de fleet lo lee al conectar y marca el daemon
+	// como incompatible si su major esperado no coincide (ADR-0003).
+	mux.HandleFunc("/api/version", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(rw).Encode(map[string]any{
+			"name":        "harnessd",
+			"version":     Version,
+			"api_version": APIVersion,
+		})
+	})
 	// /api/stats: la prueba de vida del colector es que estos números CRECEN.
 	mux.HandleFunc("/api/stats", func(rw http.ResponseWriter, r *http.Request) {
 		counts, err := st.Counts()
@@ -847,7 +865,14 @@ func run(port int, wsPath string, setup bool) int {
 		close(quit)
 	})
 
-	srv := &http.Server{Handler: mux}
+	// Toda respuesta lleva el major del contrato: la UI puede detectar un daemon
+	// viejo aunque no llame /api/version, y sin auth que gatee versiones
+	// (ADR-0003, transporte SSH).
+	withAPIVersion := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("X-Harness-Api-Version", APIVersion)
+		mux.ServeHTTP(rw, r)
+	})
+	srv := &http.Server{Handler: withAPIVersion}
 	go func() { _ = srv.Serve(ln) }()
 
 	fmt.Printf("🔭 harnessd %s → http://127.0.0.1:%d\n", Version, port)
