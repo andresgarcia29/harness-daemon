@@ -198,3 +198,44 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// La lección del VPS: la fase la manda state.json (la verdad ejecutable),
+// el bus solo enriquece, los artefactos infieren para tareas legacy, y el
+// título cae al heading cuando el frontmatter no lo trae.
+func TestFaseVieneDeStateJSONYTituloDelHeading(t *testing.T) {
+	c, _ := fixture(t)
+	ws := c.Workspace.Path
+
+	// tarea terminada: state.json dice archive aunque el bus diga intake
+	done := filepath.Join(ws, "tasks", "AUTO-1-done")
+	mustMkdir(t, done)
+	mustWrite(t, filepath.Join(done, "task.md"),
+		"---\nid: AUTO-1-done\norigin: prompt\n---\n\n# Probar reservas por Telegram\n")
+	mustWrite(t, filepath.Join(done, "state.json"), `{"schema":1,"phase":"archive"}`)
+	busPath := filepath.Join(ws, ".harness", "events.jsonl")
+	old, _ := os.ReadFile(busPath)
+	mustWrite(t, busPath, string(old)+
+		`{"ts":"2026-07-17T02:00:00Z","kind":"phase","task":"AUTO-1-done","actor":"harness","summary":"intake — nueva tarea"}`+"\n")
+
+	// tarea legacy sin state.json pero con ship.log: los artefactos infieren
+	legacy := filepath.Join(ws, "tasks", "AUTO-2-legacy")
+	mustMkdir(t, legacy)
+	mustWrite(t, filepath.Join(legacy, "task.md"), "---\nid: AUTO-2-legacy\n---\n")
+	mustWrite(t, filepath.Join(legacy, "ship.log"), `{"repo":"x"}`)
+
+	if err := c.Tick(1000); err != nil {
+		t.Fatal(err)
+	}
+	var phase, title string
+	must(t, c.St.DB.QueryRow(`SELECT phase, title FROM tasks WHERE id='AUTO-1-done'`).Scan(&phase, &title))
+	if phase != "archive" {
+		t.Fatalf("phase = %q, quiero archive (state.json manda; el bus no la regresa a intake)", phase)
+	}
+	if title != "Probar reservas por Telegram" {
+		t.Fatalf("title = %q, quiero el heading del task.md", title)
+	}
+	must(t, c.St.DB.QueryRow(`SELECT phase FROM tasks WHERE id='AUTO-2-legacy'`).Scan(&phase))
+	if phase != "ship" {
+		t.Fatalf("phase legacy = %q, quiero ship (inferida de ship.log)", phase)
+	}
+}
