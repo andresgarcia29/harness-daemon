@@ -30,12 +30,13 @@ type Answers struct {
 		Implementer string `json:"implementer"`
 		Mechanical  string `json:"mechanical"`
 	} `json:"models"`
-	LoopBudget   int       `json:"loop_budget"`
-	Autonomy     string    `json:"autonomy"` // full | checkpoint
-	DAG          []string  `json:"dag"`
-	Clusters     []Cluster `json:"clusters"`
-	Capabilities []CapSel  `json:"capabilities"`
-	Secrets      struct {
+	LoopBudget     int       `json:"loop_budget"`
+	ContextDistill bool      `json:"context_distill"`
+	Autonomy       string    `json:"autonomy"` // full | checkpoint
+	DAG            []string  `json:"dag"`
+	Clusters       []Cluster `json:"clusters"`
+	Capabilities   []CapSel  `json:"capabilities"`
+	Secrets        struct {
 		Source    string   `json:"source"`
 		Refs      []string `json:"refs"`
 		VaultAddr string   `json:"vault_addr,omitempty"`
