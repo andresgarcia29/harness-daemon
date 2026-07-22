@@ -31,6 +31,7 @@ func Vars(a *Answers, inv *Inventory, o Opts) map[string]string {
 		"FLOW":              a.Flow,
 		"AUTONOMY":          a.Autonomy,
 		"LOOP_BUDGET":       fmt.Sprint(a.LoopBudget),
+		"MODEL_PROVIDER":    defaultStr(a.Models.Provider, "anthropic"),
 		"MODEL_ARCHITECT":   a.Models.Architect,
 		"MODEL_REVIEWER":    a.Models.Reviewer,
 		"MODEL_IMPLEMENTER": a.Models.Implementer,
