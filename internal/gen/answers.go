@@ -166,22 +166,25 @@ func NormalizeModels(a *Answers) {
 	if a.Models.Provider == "" {
 		a.Models.Provider = "anthropic"
 	}
-	alias := func(s string) string {
-		l := strings.ToLower(s)
-		switch {
-		case strings.Contains(l, "opus"):
-			return "deep"
-		case strings.Contains(l, "sonnet"):
-			return "smart"
-		case strings.Contains(l, "haiku"):
-			return "fast"
+	// La migracion es POR ROL, no por modelo: un answers viejo con IDs
+	// crudos declaraba jerarquia (caro/medio/barato), y la politica nueva
+	// asigna esa jerarquia por funcion: architect piensa (deep), reviewer
+	// e implementer producen (smart), mechanical despacha (fast). Un valor
+	// que ya es alias pasa intacto.
+	isAlias := func(s string) bool { return s == "fast" || s == "smart" || s == "deep" }
+	migrate := func(v, def string) string {
+		if v == "" || isAlias(v) {
+			if v == "" {
+				return def
+			}
+			return v
 		}
-		return s
+		return def
 	}
-	a.Models.Architect = alias(a.Models.Architect)
-	a.Models.Reviewer = alias(a.Models.Reviewer)
-	a.Models.Implementer = alias(a.Models.Implementer)
-	a.Models.Mechanical = alias(a.Models.Mechanical)
+	a.Models.Architect = migrate(a.Models.Architect, "deep")
+	a.Models.Reviewer = migrate(a.Models.Reviewer, "smart")
+	a.Models.Implementer = migrate(a.Models.Implementer, "smart")
+	a.Models.Mechanical = migrate(a.Models.Mechanical, "fast")
 }
 
 func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *Answers {
@@ -194,10 +197,10 @@ func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *An
 		a.Flow = "trunk-direct-to-prod"
 	}
 	a.Models.Provider = "anthropic"
-	a.Models.Architect = "deep"
-	a.Models.Reviewer = "deep"
-	a.Models.Implementer = "smart"
-	a.Models.Mechanical = "fast"
+	a.Models.Architect = "deep"    // el pensador: plan, RFC, litigios (Fable)
+	a.Models.Reviewer = "smart"    // el productor: veredictos y diffs (Opus)
+	a.Models.Implementer = "smart" // el productor: todo el codigo (Opus)
+	a.Models.Mechanical = "fast"   // lo especificisimo: digest, triage (Sonnet)
 	a.LoopBudget = 3
 	a.Autonomy = "checkpoint"
 	a.Clusters = SeedClusters(inv, overrides)
