@@ -17,46 +17,77 @@
 
 provider: {{MODEL_PROVIDER}}   # anthropic | vertex | bedrock | kimi | openrouter
 
+# ── la semántica de los tres aliases ──────────────────────────────────
+# deep  = EL PENSADOR. Donde el output es razonamiento con fan-out: el
+#         plan, la síntesis del RFC, los litigios, los ADRs, la
+#         escalación de un atasco. Su texto lo consumen N agentes.
+# smart = EL PRODUCTOR. Todo el token-consuming de crear: implementar,
+#         revisar diffs, ejercitar QA, escribir tests y reglas.
+# fast  = LO ESPECIFICÍSIMO. Solo tareas sin juicio ni fan-out: digest
+#         diario, triage de labels, limpieza mecánica. En duda, smart.
+
+# ── REGLAS DE USO DE FABLE (el tier deep en anthropic) ────────────────
+# 1. Fable piensa, no teclea. Va donde la salida es UN artefacto de
+#    razonamiento que multiplica (plan, RFC, ADR, veredicto de
+#    escalación). Jamás en el loop de edición del implementer: ahí el
+#    valor está en el diff y Opus produce igual con menos latencia.
+# 2. La escalación SUBE a Fable para RE-PENSAR, no para teclear más:
+#    un implementer atascado dos veces no necesita más velocidad,
+#    necesita otro enfoque. Al destrabarse, el relevo vuelve a smart.
+# 3. Fable rinde con contexto CURADO: specs, briefs y el grafo, no
+#    dumps de código (eso ya es ley del harness: repo-brief, graphify).
+# 4. No lo pongas en cronjobs baratos ni en QA: pensar donde no hay
+#    decisión es latencia comprada. El sandwich existe para eso.
+
 # ── alias → id, por proveedor ─────────────────────────────────────────
 # anthropic usa los nombres cortos que Claude Code entiende nativo. Los
 # demás son EJEMPLOS de formato: verifica el ID exacto en el catálogo de
-# tu proveedor antes de cambiar `provider:` (los IDs de Vertex llevan
-# @fecha; los de Bedrock, prefijo de región y sufijo de versión).
+# tu proveedor antes de cambiar `provider:` (Vertex agrega sufijo
+# @fecha; Bedrock, prefijo de región y sufijo de versión).
 
 models.anthropic:
-  fast: haiku
-  smart: sonnet
-  deep: opus
+  fast: sonnet
+  smart: opus
+  deep: fable
 
 models.vertex:
   # Claude vía Google Vertex. Claude Code: export CLAUDE_CODE_USE_VERTEX=1,
   # ANTHROPIC_VERTEX_PROJECT_ID=<proyecto>, CLOUD_ML_REGION=<región>.
-  fast: claude-haiku-4-5@20251001
-  smart: claude-sonnet-5@20250929
-  deep: claude-opus-4-8@20260120
+  # AGREGA el sufijo @fecha que liste TU catálogo de Vertex (Model Garden).
+  fast: claude-sonnet-5
+  smart: claude-opus-4-8
+  deep: claude-fable-5
 
 models.bedrock:
   # Claude vía AWS Bedrock. Claude Code: export CLAUDE_CODE_USE_BEDROCK=1.
-  fast: us.anthropic.claude-haiku-4-5-20251001-v1:0
-  smart: us.anthropic.claude-sonnet-5-20250929-v1:0
-  deep: us.anthropic.claude-opus-4-8-20260120-v1:0
+  # Verifica el ID exacto (región y sufijo de versión) en tu consola.
+  fast: us.anthropic.claude-sonnet-5-20250929-v1:0
+  smart: us.anthropic.claude-opus-4-8-20260120-v1:0
+  deep: us.anthropic.claude-fable-5-v1:0
 
 models.kimi:
-  # Kimi Code / Moonshot (API compatible con Anthropic).
+  # Kimi Code / Moonshot (API compatible con Anthropic): thinking piensa,
+  # k2 produce, turbo despacha lo mecánico. Misma semántica de tiers.
   fast: kimi-k2-turbo
   smart: kimi-k2
   deep: kimi-k2-thinking
 
+models.minimax:
+  # MiniMax (API compatible con Anthropic). Publica un flagship a la vez:
+  # verifica el nombre vigente en su catálogo antes de activarlo.
+  fast: MiniMax-M2
+  smart: MiniMax-M2.1
+  deep: MiniMax-M2.1
+
 models.openrouter:
-  fast: anthropic/claude-haiku-4.5
-  smart: anthropic/claude-sonnet-5
-  deep: anthropic/claude-opus-4.8
+  fast: anthropic/claude-sonnet-5
+  smart: anthropic/claude-opus-4.8
+  deep: anthropic/claude-fable-5
 
 # ── rol → alias ───────────────────────────────────────────────────────
-# Principio (sandwich de razonamiento): el gasto en razonamiento es
-# proporcional al FAN-OUT del artefacto: una spec o un plan lo leen N
-# agentes aguas abajo (deep); un diff lo lee uno (smart); un digest no
-# lo lee nadie dos veces (fast). Aquí van ALIASES, nunca IDs crudos.
+# El sandwich con nombres propios (anthropic): FABLE planea y arbitra,
+# OPUS 4.8 produce todo el código y los veredictos, SONNET despacha lo
+# especificísimo. Aquí van ALIASES, nunca IDs crudos.
 
 roles:
   orquestador: {{MODEL_ARCHITECT}}
