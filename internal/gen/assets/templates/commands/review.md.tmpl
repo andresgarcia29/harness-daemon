@@ -21,6 +21,11 @@ reporta el código de error.
      `scripts/evidence.py run ... --kind test -- <comando>` y guarda el
      `EVIDENCE_ID`. Un agente QA que solo re-lee lo que el review ya
      probó es ceremonia, no verificación.
+1b. **Scaffold determinista del veredicto** (antes de lanzar a nadie):
+   `scripts/verdict-scaffold.sh <task-id> <repo>` (con `--allow-empty`
+   si la evidencia de QA aún no existe). Escribe los campos mecánicos
+   verificados (commit, evidence[], implementation_agents desde los
+   runners de la evidencia); el reviewer SOLO reemplaza el juicio.
 2. **Lanza reviewer y QA EN PARALELO** — QA ejercita comportamiento y no
    necesita el veredicto; serializarlos regala la fase entera al camino
    crítico:

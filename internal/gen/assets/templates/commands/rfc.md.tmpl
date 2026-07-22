@@ -39,7 +39,15 @@ tasks/$ARGUMENTS/task.md).
    usa la escalación de models.yaml), forecast de tamaño de review
    (presupuesto ~400 líneas/PR; si excede, rebana en tareas
    entregables), y tareas de docs (ADR + doc de servicio) si cambia
-   comportamiento o contrato.
+   comportamiento o contrato. **Aristas del DAG solo por conflicto
+   REAL** (archivos compartidos o dependencia de contrato), no por
+   repo: cada tarea tiene su worktree y el lock de ship serializa el
+   push, no el desarrollo; el plan declara los ARCHIVOS por tarea para
+   justificar el paralelo (medido: 8 tareas en fila del mismo repo con
+   archivos disjuntos = el mayor costo de reloj de la sesión). **Si una
+   tarea toca tests**, la entrada MODIFIED/REMOVED del delta-spec
+   NOMBRA los archivos de test afectados: gate_tests_untouched exige
+   esa declaración por archivo.
 6. Decisiones que sobreviven el RFC → borrador de ADR en docs/adr/.
 7. Cierra con el resumen al humano y sugiere: `/implement $ARGUMENTS`.
 
