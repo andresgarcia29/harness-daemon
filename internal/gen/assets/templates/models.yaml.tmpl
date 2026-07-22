@@ -98,6 +98,12 @@ roles:
   qa: {{MODEL_IMPLEMENTER}}
   mechanical: {{MODEL_MECHANICAL}}
   escalation: {{MODEL_ESCALATION}}
+  # reader: el tier que LEE contexto largo para que el deep razone sobre el
+  # destilado, no sobre el volcado crudo (patrón MinionS, arXiv:2502.15964:
+  # un modelo barato lee, uno caro razona; hasta 5.7× menos costo con 97.9%
+  # de la calidad). OPT-IN: solo se usa si context_distill=true en
+  # harness-answers.yaml (PROPUESTO; docs/harness/minions-context-distill.md). Default = fast.
+  reader: {{MODEL_MECHANICAL}}
 
 # ── excepciones por agente ────────────────────────────────────────────
 # Una línea por excepción: <archivo de .claude/agents/ sin .md>: <alias>.

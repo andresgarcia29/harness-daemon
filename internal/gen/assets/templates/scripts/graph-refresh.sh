@@ -36,12 +36,18 @@ if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$heads" ] && graph_json
 fi
 
 cd "$WS"
+# `graphify update <path>` extrae SOLO código (AST, sin LLM ni API key) y
+# sirve para el build inicial Y el refresh: es idempotente. El comando viejo
+# `graphify <path>` intentaba extracción SEMÁNTICA de docs/imágenes, que exige
+# GEMINI/ANTHROPIC_API_KEY y fallaba en toda instancia sin key (visto en el
+# VPS: 682 docs/imágenes). El grafo del harness es de CÓDIGO cross-repo
+# ("¿quién consume este servicio?"), no semántico: code-only es lo correcto.
 if graph_json >/dev/null; then
-  graphify repos --update >/dev/null 2>&1 \
-    || { echo "⚠️  graphify --update falló; fail-open, se reintenta en el próximo refresh" >&2; exit 0; }
+  graphify update repos >/dev/null 2>&1 \
+    || { echo "⚠️  graphify update falló; fail-open, se reintenta en el próximo refresh" >&2; exit 0; }
 else
-  echo "→ grafo inicial de repos/ (primera vez: puede tardar unos minutos)"
-  graphify repos >/dev/null 2>&1 \
+  echo "→ grafo inicial de repos/ code-only (primera vez: puede tardar unos minutos)"
+  graphify update repos >/dev/null 2>&1 \
     || { echo "⚠️  graphify build falló; fail-open" >&2; exit 0; }
 fi
 printf '%s' "$heads" > "$STAMP"
