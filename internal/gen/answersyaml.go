@@ -49,8 +49,8 @@ func ParseAnswersYAML(b []byte) (*Answers, error) {
 				a.Flow = val
 			case "autonomy":
 				a.Autonomy = val
-			case "context_distill":
-				a.ContextDistill = (val == "true")
+			case "minion_decompose":
+				a.MinionDecompose = (val == "true")
 			case "loop_budget":
 				if v, err := strconv.Atoi(val); err == nil {
 					a.LoopBudget = v
