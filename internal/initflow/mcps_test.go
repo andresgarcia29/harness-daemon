@@ -59,7 +59,12 @@ func TestMcpSecretAllowlistYPersistencia(t *testing.T) {
 	if _, code := m.Handle("mcp-secret", map[string]any{"name": "github-mcp", "key": "OTRA_COSA", "value": "x"}); code != 400 {
 		t.Fatal("clave fuera del catálogo")
 	}
-	// el probe real fallará (docker/stub) → NO persiste
+	// PATH mínimo: sin docker/npx el probe falla SIEMPRE — en hosts CON
+	// docker el github-mcp-server arranca aunque el token sea malo (no valida
+	// en el handshake) y el test dejaba de ser hermético. La premisa del test
+	// es "sonda fallida no persiste"; esto la garantiza en cualquier host.
+	t.Setenv("PATH", t.TempDir())
+	// el probe real fallará (sin runtime en PATH) → NO persiste
 	if _, code := m.Handle("mcp-secret", map[string]any{"name": "github-mcp", "key": "GITHUB_PERSONAL_ACCESS_TOKEN", "value": "bad"}); code != 400 {
 		t.Fatal("sonda fallida no persiste")
 	}
