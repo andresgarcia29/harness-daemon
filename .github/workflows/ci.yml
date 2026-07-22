@@ -28,11 +28,10 @@ jobs:
       HARNESS_PG_DSN: postgres://harness:harness@127.0.0.1:5432/harness_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
-      - name: checkout harness-installer (privado — fuente de los assets)
+      - name: checkout harness-creator (público — fuente de los assets)
         uses: actions/checkout@v4
         with:
           repository: andresgarcia29/harness-creator
-          token: ${{ secrets.INSTALLER_TOKEN }}
           path: harness-installer
       - uses: actions/setup-go@v5
         with:
