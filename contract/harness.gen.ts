@@ -49,6 +49,12 @@ export interface SkillDoc {
   name: string;
   desc: string;
   ok: boolean;
+  /**
+   * Layer: upstream (la trae el plugin, manifest del generador) |
+   * compartida (skills-sync, marca .managed) | local (nadie la pisa)
+   */
+  layer: string | null;
+  source: string | null; // compartida: repo@ref#sha
 }
 export interface Toolbox {
   version: string;
@@ -66,6 +72,8 @@ export interface McpServer {
   wrapped: boolean;
   bin_ok: boolean;
   secrets_ok: boolean | null;
+  secrets_needed: string[] | null;
+  secrets_missing: string[] | null;
   env: string[];
   probe: McpProbe | null; // la sonda viva (OPERAR): se llena al "Probar"
 }
