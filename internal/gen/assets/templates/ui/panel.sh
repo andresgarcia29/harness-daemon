@@ -27,7 +27,7 @@ have=""; [ -x "$BIN" ] && have="$("$BIN" version 2>/dev/null || true)"
 
 # Bajar/actualizar el binario si no tenemos la versión correcta.
 if [ "$have" != "$VER" ] && command -v gh >/dev/null 2>&1; then
-  echo "→ bajando $asset v$VER del release privado…"
+  echo "→ bajando $asset v$VER del release de github.com/andresgarcia29/harness-daemon…"
   tmp="$(mktemp -d)"
   if gh release download "v$VER" -R "$REPO" -p "$asset" -D "$tmp" 2>/dev/null && [ -f "$tmp/$asset" ]; then
     mv "$tmp/$asset" "$BIN" && chmod +x "$BIN" && have="$VER"
@@ -38,7 +38,7 @@ fi
 
 # Arrancar harnessd si lo tenemos (aunque sea una versión previa).
 if [ -x "$BIN" ] && [ -n "$have" ]; then
-  [ "$have" != "$VER" ] && echo "ℹ️  uso el harnessd que tienes (v$have); para el v$VER necesitas acceso al repo privado."
+  [ "$have" != "$VER" ] && echo "ℹ️  uso el harnessd que tienes (v$have); el v$VER está en los releases de $REPO."
   opener=open; command -v xdg-open >/dev/null 2>&1 && opener=xdg-open
   ( sleep 1.2; "$opener" "http://127.0.0.1:$PORT" >/dev/null 2>&1 || true ) &
   exec "$BIN" run --port "$PORT" --workspace .
@@ -47,6 +47,6 @@ fi
 # Sin binario ni forma de bajarlo → panel Python (sin las features nuevas).
 echo "⚠️  no hay harnessd — caigo al panel Python (server.py): funciona, pero SIN"
 echo "   multi-máquina, terminales ni sonda de MCP."
-echo "   Para el panel completo, con acceso al repo privado:"
+echo "   Para el panel completo (daemon multi-máquina, OSS):"
 echo "     gh release download v$VER -R $REPO -p $asset -O $BIN && chmod +x $BIN"
 exec python3 "$DIR/server.py" --port "$PORT" --workspace . --open

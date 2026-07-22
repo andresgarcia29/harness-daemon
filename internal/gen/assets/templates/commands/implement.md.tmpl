@@ -7,12 +7,16 @@ Implementación de $ARGUMENTS según tasks/<task-id>/plan.md.
 
 1. **Orden**: `bd ready --json` te da las tareas desbloqueadas del DAG.
    Si se indicó un repo, limita a ese repo.
-2. **Worktrees**: `scripts/worktree-task.sh <task-id> <repos-de-las-tareas-listas>`.
-   NUNCA trabajes en repos/ canónico (el hook te bloquea).
+2. **Worktrees**: normalmente ya existen (el prefetch de /rfc o /auto
+   los creó en background). Si faltan:
+   `scripts/worktree-task.sh <task-id> <repos-de-las-tareas-listas>` y
+   `scripts/repo-brief.sh <repo>` por repo. NUNCA trabajes en repos/
+   canónico (el hook te bloquea).
 3. **Por cada tarea lista, lanza un agente `implementer`** con contexto
-   mínimo y completo: task-id, repo, su worktree, su entrada del plan y
-   sus criterios de aceptación. Tareas sin dependencia entre sí:
-   EN PARALELO.
+   mínimo y completo: task-id, repo, su worktree, su entrada del plan,
+   sus criterios de aceptación y el brief (`.cache/briefs/<repo>.md`).
+   Con eso el implementer NO explora el repo desde cero — Serena cubre
+   el nivel símbolo. Tareas sin dependencia entre sí: EN PARALELO.
 4. Cada implementer termina → marca su bead y pide review. Encola
    `/review <task-id> <repo>` EN BACKGROUND.
 5. **El review NO es barrera**: una tarea cuyo único prerequisito es
@@ -25,10 +29,13 @@ Implementación de $ARGUMENTS según tasks/<task-id>/plan.md.
    mismo implementer → humano.
 7. Al agotarse las tareas listas, re-consulta `bd ready` (el DAG se
    destraba al cerrar beads).
-8. **Escalación de modelo** (política: `models.yaml`): tras 2
-   veredictos fail consecutivos en la misma tarea, o si el plan la
-   marcó `complexity: high`, relanza el implementer con el modelo de
-   escalación. Escalar modelo NO resetea el presupuesto de loop.
+8. **Escalación de modelo** (política: `models.yaml`): escala YA — no a
+   la segunda — cuando UN veredicto fail revele comprensión equivocada
+   del problema (no un detalle mecánico), cuando el plan marcó
+   `complexity: high`, o tras 2 fails de cualquier tipo. Cada ronda con
+   el modelo equivocado cuesta 10-20 min de wall-clock: es el minuto
+   más caro del pipeline. Escalar modelo NO resetea el presupuesto de
+   loop.
 9. Si un implementer agota su presupuesto ({{LOOP_BUDGET}}): NO lo
    relances — resume el atasco al humano con el diff y el último error.
 10. **Write-back de spec**: si el implementer descubre que la realidad

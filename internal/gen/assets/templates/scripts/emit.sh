@@ -73,9 +73,14 @@ emit() {
 
 # Ejecutado directamente (no sourceado) → CLI. Lo usa /auto desde Bash.
 # El :- importa: BASH_SOURCE no existe si te sourcean desde zsh o sh, y con
-# `set -u` eso revienta el script que te sourceó. Un bus de telemetría que
-# tumba a quien lo usa es exactamente lo que este archivo promete no ser.
-if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+# `set -u` eso revienta el script que te sourceó. Y OJO con la sintaxis:
+# ${BASH_SOURCE[0]} es un ARRAY — dash (el sh de Debian/Ubuntu) no lo parsea
+# ("Bad substitution") y aborta el source entero; el sh de macOS es bash
+# disfrazado y lo tolera, así que en Mac esto pasaba de chiripa. Sin
+# subíndice, $BASH_SOURCE expande al elemento 0 en bash y a vacío (con :-)
+# en dash/zsh — portable de verdad. Un bus de telemetría que tumba a quien
+# lo usa es exactamente lo que este archivo promete no ser.
+if [ "${BASH_SOURCE:-}" = "${0}" ]; then
   emit "$@"
   exit 0
 fi

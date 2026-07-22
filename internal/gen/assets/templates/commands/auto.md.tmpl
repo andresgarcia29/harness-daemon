@@ -1,6 +1,6 @@
 ---
 description: Ticket o prompt → producción, sin intervención humana. Tú decides todo lo decidible; solo paras donde el DISEÑO exige un humano.
-argument-hint: <TICKET-ID | url | task-id | "prompt literal entre comillas"> [--hasta rfc|implement|review|ship]
+argument-hint: <TICKET-ID | url | task-id | "prompt literal entre comillas"> [--hasta rfc|implement|review|ship] [--model fast|smart|deep]
 ---
 
 Ejecutas el pipeline COMPLETO para $ARGUMENTS y no vuelves a hablar con
@@ -53,14 +53,48 @@ del trabajo y no habrá aclaraciones. Entonces:
    `tasks/<id>/` y su trazabilidad es el trailer `Task: <id>`. Si
    querías el ticket, la entrada era A.
 
+## Paso 0.1 — El carril (cuánta ceremonia merece esta tarea)
+
+La seguridad del harness vive en los gates deterministas, el canary y el
+rollback — NO en el número de fases LLM. Por eso el pipeline se dimensiona
+al blast radius, no al revés. Clasifica con señales DETERMINISTAS
+(`inventory.json`, el grafo, `manifest.yaml` — no con tu intuición):
+
+| Carril | Señales (todas deben cumplirse) | Pipeline |
+|---|---|---|
+| **express** | 1 solo repo · 1 solo dominio de ownership · sin proto/migraciones/infra · sin decisión de arquitectura | Salta RFC: TÚ escribes el mini-plan y el delta-spec (abajo) → 1 implementer → review → ship |
+| **standard** | 2-3 repos · un solo dominio, o dominios NO cruzados · sin breaking | RFC con architect, SIN abogados (no hay frontera que defender) |
+| **full** | cruza ownership · contrato breaking · servicio nuevo · migración de datos | El pipeline completo con abogados |
+
+- En duda entre dos carriles: el MAYOR. Escalar después es barato;
+  la clasificación es una propuesta que `ship.sh` verifica (`gate_lane`:
+  un express cuyo diff toque contratos/migraciones NO pasa).
+- Registra el carril y su evidencia como primera línea del ledger.
+- **Escalar a mitad de camino (pre-aprobado)**: si el trabajo revela
+  señales de un carril mayor — segundo repo, contrato, migración — o
+  `gate_lane` te bloquea: `scripts/harness-policy.py escalate tasks/<id>
+  --to <carril> --actor orchestrator` y entra por `/rfc`. El worktree y
+  los commits se conservan; solo se recupera la deliberación saltada.
+
+**El mini-plan express** (lo escribes tú, sin lanzar architect ni abogados —
+ya tienes todo el contexto en esta sesión):
+- `tasks/<id>/plan.md`: 1 tarea, el repo, criterios binarios, archivos
+  sospechados (del grafo, no de grep), complexity.
+- `tasks/<id>/delta-spec.md`: los criterios de aceptación como requirements
+  EARS `## ADDED` (2-6 líneas). Existe para que la compliance matrix del
+  reviewer y `gate_evidence` operen IGUAL en todos los carriles: express
+  recorta sesiones LLM, jamás artefactos ni gates.
+
 ## Paso 0.2 — Estado ejecutable (la prosa no mueve fases)
 
 Toda tarea nueva se inicializa una sola vez con
-`scripts/harness-policy.py init tasks/<id> [--budget-usd <valor-del-panel>]`. Al retomar, lee `state.json` y
-continúa desde su fase; no infieras la fase por conversación. Cada avance se
-solicita con `scripts/harness-policy.py transition tasks/<id> <fase> --actor
-orchestrator`. Una transición rechazada es un gate: no edites `state.json` a
-mano.
+`scripts/harness-policy.py init tasks/<id> --lane <express|standard|full>
+[--budget-usd <valor-del-panel>]`. Al retomar, lee `state.json` (incluido su
+`lane`) y continúa desde su fase; no infieras la fase por conversación. Cada
+avance se solicita con `scripts/harness-policy.py transition tasks/<id> <fase>
+--actor orchestrator`. Una transición rechazada es un gate: no edites
+`state.json` a mano. (El carril express permite `intake → implement`; los
+demás exigen pasar por `rfc`.)
 
 ## Paso 0.4 — Preferencias del panel (si task.md trae `source: panel`)
 
@@ -76,6 +110,18 @@ frontmatter es LEY para esta tarea:
 - `budget_usd: X` → revisa ccusage al cerrar cada fase; si lo superaste, PARA
   y repórtalo (el presupuesto agotado es una parada, no una sugerencia).
 - `preferred_model` ya se aplicó al lanzarte; regístralo en el reporte.
+
+## Paso 0.45 — Modelo por tarea (la perilla más fina)
+
+Si llegó `--model <alias>` en $ARGUMENTS, o el frontmatter de task.md
+trae `model: <alias>` (fast|smart|deep — el panel escribe
+`preferred_model`, vale igual): **ese alias manda para TODOS los agentes
+de esta tarea**, por encima de los roles de models.yaml. Resuélvelo al
+ID real con `scripts/stamp-models.sh resolve <alias>` y pásalo al
+lanzar cada subagente. Dos excepciones que NO se degradan: la
+escalación por fail/watchdog sigue subiendo a `roles.escalation`, y
+escalar a humano nunca se sustituye por escalar modelo. Registra el
+override en el ledger y en el reporte final.
 
 ## Paso 0.5 — El ledger de supuestos (por qué no necesitas preguntar)
 
@@ -102,26 +148,45 @@ Reglas del ledger, en orden de precedencia:
 
 ## El flujo
 
+0. **Prefetch (en cuanto sepas los repos — $0 tokens, en background)**:
+   mientras redactas el intake/plan o corre el RFC, lanza en paralelo
+   `scripts/worktree-task.sh <id> <repos>`, `scripts/repo-brief.sh <repo>`
+   por repo afectado, `scripts/graph-refresh.sh` (para que `graphify
+   query` responda con el grafo AL DÍA, no con uno podrido), y el warmup
+   de deps (`scripts/gowork.sh`, `scripts/py.sh`, `scripts/fe.sh` según
+   stack). Cuando el implementer arranque, su mesa ya está puesta:
+   serializar preparación determinista detrás de razonamiento LLM es la
+   forma más tonta de perder minutos.
 1. **Intake**. Valida task.md contra `docs/harness/intake.md`. Rebotar
    NO es una opción (no hay a quién): un criterio no verificable lo
    REESCRIBES verificable y lo anotas en el ledger. Solo paras si caes
-   en la lista de abajo. Cuando quede válido, solicita `intake → rfc`.
-2. **RFC**. Abogados afectados en PARALELO, una respuesta JSON cada
-   uno. Arquitecto sintetiza; árbitro de contratos: el repo proto.
-   Salida: `plan.md` (DAG), delta-spec EARS, beads. Si dos abogados
-   chocan, el desempate es la evidencia (spec > ADR > map.md de
-   ownership), no el consenso ni tu opinión — máx 2 rondas. Cuando plan,
-   delta-spec y `dag.json` sean válidos, ejecuta
-   `scripts/harness-policy.py validate-dag tasks/<id>/dag.json` y solicita
-   `rfc → implement` sólo si queda verde.
+   en la lista de abajo. Cuando quede válido: express solicita
+   `intake → implement`; standard/full solicitan `intake → rfc`.
+2. **RFC** (solo standard/full). En **standard** el architect redacta
+   plan + delta-spec directo, SIN abogados: donde no se cruza ninguna
+   frontera de ownership no hay litigio que valga sus tokens ni sus
+   minutos. En **full**, abogados de los dominios CRUZADOS en PARALELO,
+   una respuesta JSON cada uno; arquitecto sintetiza; árbitro de
+   contratos: el repo proto. Si dos abogados chocan, el desempate es la
+   evidencia (spec > ADR > map.md de ownership), no el consenso ni tu
+   opinión — máx 2 rondas. Cuando plan, delta-spec y `dag.json` sean
+   válidos, ejecuta `scripts/harness-policy.py validate-dag
+   tasks/<id>/dag.json` y solicita `rfc → implement` sólo si queda verde.
 3. **Implement**. Un worktree por repo, un implementer por tarea.
    `bd ready` manda: todo lo que el DAG no serializa va EN PARALELO.
+   **Contexto de arranque, completo y mínimo**: su entrada del plan, sus
+   criterios, y el brief de `.cache/briefs/<repo>.md` — el implementer
+   NO explora el repo desde cero; Serena cubre el nivel símbolo.
    Cada tarea que termina encola su review DE INMEDIATO (pipeline, no
    barrera: T1 en review mientras T4 se implementa).
 4. **Review**. Reviewer (veredicto + compliance matrix) y qa (ejercita
-   los criterios). Al entrar solicita `implement → review`. Loops fail→fix
-   vuelven mediante `review → implement → review`; policy cuenta y limita las
-   rondas. Toda prueba que sustenta un pass usa `scripts/evidence.py run`.
+   los criterios) **EN PARALELO** — qa no espera el veredicto; el merge
+   del campo `qa` es mecánico (ver /review). Al entrar solicita
+   `implement → review`. Loops fail→fix vuelven mediante
+   `review → implement → review`; policy cuenta y limita las rondas. El
+   re-review es INCREMENTAL: el reviewer re-evalúa el diff desde su
+   veredicto anterior + los blocking, no el cambio completo otra vez.
+   Toda prueba que sustenta un pass usa `scripts/evidence.py run`.
 5. **Checkpoint** — SOLO si `autonomy: checkpoint` en
    harness-answers.yaml: un resumen de 10 líneas antes del PRIMER ship
    a main y esperas un "go". Con `autonomy: full` este paso no existe.
@@ -179,6 +244,9 @@ no edites el estado. Al cerrar cada fase registra el total monotónico de
 ## Decisiones PRE-APROBADAS (nunca preguntes por esto)
 
 - Redactar criterios de aceptación, scope y fuera-de-scope de un prompt.
+- Clasificar el carril con las señales del paso 0.1 — y ESCALARLO
+  (`harness-policy.py escalate`) cuando `gate_lane` bloquee o el trabajo
+  revele señales de un carril mayor. Escalar carril no es una parada.
 - Cualquier supuesto que respete la precedencia de evidencia del ledger.
 - Crear labels de flujo faltantes en el tracker (needs-spec, agent-ready,
   in-harness, shipped) y publicar comentarios de trazabilidad.
@@ -189,13 +257,18 @@ no edites el estado. Al cerrar cada fase registra el total monotónico de
 - Continuar al siguiente paso cuando el actual quedó verde.
 - Elegir el umbral concreto de un criterio difuso (déjalo en el ledger).
 
-## Watchdog de subagentes
+## Watchdog de subagentes (heartbeat, no reloj)
 
-Lanza implementers/reviewers en BACKGROUND y vigila. Un subagente sin
-avance en ~10 min: interrúmpelo y relánzalo — es seguro porque el estado
-vive en `tasks/<id>/` y en los commits del worktree, no en su
-conversación. Dos muertes del mismo rol en la misma tarea → humano con
-el último estado.
+Lanza implementers/reviewers en BACKGROUND y vigila su ACTIVIDAD, no el
+reloj: un agente sano llama herramientas constantemente (el bus y
+track-read lo registran). **~3 minutos sin una sola tool call = atascado**
+— no esperes a que un timer de 10 minutos lo confirme. Interrúmpelo y
+relánzalo — es seguro porque el estado vive en `tasks/<id>/` y en los
+commits del worktree, no en su conversación. El relanzamiento va YA con
+el modelo de escalación de `models.yaml`: repetir el mismo experimento
+con el mismo modelo es, la mitad de las veces, repetir el mismo atasco.
+Límite duro de 10 min por si el heartbeat no se puede observar. Dos
+muertes del mismo rol en la misma tarea → humano con el último estado.
 
 ## Cuenta lo que decides (el bus)
 

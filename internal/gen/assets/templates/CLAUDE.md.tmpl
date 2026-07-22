@@ -14,6 +14,8 @@ contradice a `docs/`, gana `docs/` — y repórtalo.
   `docs/index.md` es el catálogo).
 - El harness (agentes, comandos, hooks): `.claude/`.
 - Estado por tarea: `tasks/<id>/` (task.md, plan.md, veredictos, logs).
+- `AGENTS.md`: este mismo mapa en el estándar multi-herramienta
+  (Cursor, Kimi, Codex…). Modelos: `models.yaml` + `make models`.
 
 ## Mapa de la plataforma
 
@@ -35,6 +37,19 @@ Dirección de dependencias (ley, referencia del DAG de shipping):
    2 rondas. Agotado → humano.
 7. **Decisiones fuera de `docs/` NO EXISTEN.** Lo decidido en chat se
    propone como ADR o se perdió.
+8. **Builds pesados serializados** (economía de CPU) — `docker
+   build/run` de toolchain SOLO vía `scripts/build-slot.sh`: semáforo
+   cross-sesión, `max(1, núcleos/4)` slots (override
+   `HARNESS_BUILD_SLOTS`), espera BLOQUEANTE de kernel sin polling. Sin
+   locks huérfanos (el kernel libera aún con `kill -9`). Un hook bloquea
+   el `docker build/run` pelado.
+9. **Loop interno nativo** — iterá con las toolchains del host:
+   `scripts/gowork.sh` (Go: `go.work` que une repos/worktree y arregla
+   los `replace` del layout monorepo), `scripts/py.sh` (Python/uv +
+   shims para path-deps rotos), `scripts/fe.sh` (frontend: PM por
+   lockfile). El contenedor es SOLO la compuerta CI pre-ship
+   (serializada por la ley 8), no el loop. Dockerfiles de build: cache
+   mounts de BuildKit (`RUN --mount=type=cache,…`).
 
 ## Pipeline (detalle: docs/harness/pipeline.md)
 
@@ -59,6 +74,8 @@ Semanal: `/promote` (memoria → ley). Roles: `.claude/agents/`.
   `scripts/quiet.sh <cmd>` — head+tail y dump completo en
   `.cache/quiet/`.
 - Preguntas cross-repo → grafo (`graphify query`), no grep masivo.
+  "¿Dónde está X?" → `semble` (búsqueda semántica local) si está
+  instalado; abrir 20 archivos para ubicar uno es el anti-patrón.
 - Docs de librerías → MCP context7, no web-search repetido.
 - Implementación → edición simbólica (Serena), no leer archivos
   enteros.

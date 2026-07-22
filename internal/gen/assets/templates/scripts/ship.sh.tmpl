@@ -4,8 +4,12 @@
 #
 # Uso: ship.sh <task-id> <repo>
 # Opera sobre el WORKTREE de la tarea (worktrees/<task>/<repo>), nunca
-# sobre el clon canónico. Gates en orden: rebase → trailer → lenguaje →
-# buf breaking → gitleaks → semgrep → veredicto de review → lock → push.
+# sobre el clon canónico. Serie solo lo que tiene orden real:
+# rebase → trailer → carril. Después, los gates independientes corren EN
+# PARALELO (lenguaje+buf ∥ gitleaks+semgrep ∥ tests-no-debilitados ∥
+# veredicto+evidencia+policy) y se reportan TODOS los rojos juntos — un
+# solo prompt de fix con todo, en vez de descubrirlos ronda por ronda.
+# Al final, en serie otra vez: lock → push.
 #
 # Portabilidad: bash 3.2 (macOS), BSD grep. Sin flock (lock por mkdir).
 set -euo pipefail
@@ -109,6 +113,31 @@ gate_trailer() {
   }
 }
 
+# gate_lane — el carril lo declara el intake; el diff lo confirma este gate.
+# express prometió: un solo repo (implícito: el worktree ES un repo), cero
+# contratos, cero migraciones, cero infra. Si el diff rompe la promesa, el
+# ship no pasa: la tarea escala de carril y re-entra por /rfc. Equivocarse
+# de carril cuesta una re-entrada — jamás un ship sin la deliberación que
+# tocaba. Por esto los carriles no relajan la seguridad: la clasificación
+# del intake es una propuesta; este gate es quien la verifica.
+gate_lane() {
+  gate "carril (lane)"
+  local st="$WS/tasks/$TASK/state.json" lane
+  lane="$(jq -r '.lane // "full"' "$st" 2>/dev/null || echo full)"
+  [ "$lane" = "express" ] || return 0
+  local pat="${LANE_GUARD_PATTERN:-(\.proto\$|(^|/)proto/|(^|/)migrations?/|\.sql\$|(^|/)helm/|(^|/)charts/|(^|/)terraform/|(^|/)openapi\.|(^|/)swagger\.)}"
+  local hits
+  hits="$(git diff origin/main..HEAD --name-only | grep -E "$pat" || true)"
+  if [ -n "$hits" ]; then
+    echo "❌ carril express, pero el diff toca contratos/migraciones/infra:"
+    echo "$hits" | sed 's/^/   · /'
+    echo "   ↳ remediación: este cambio SÍ necesita deliberación. Escala el carril:"
+    echo "     python3 scripts/harness-policy.py escalate tasks/$TASK --to standard --actor orchestrator"
+    echo "     y corre /rfc $TASK — el trabajo hecho se conserva en el worktree."
+    exit 3
+  fi
+}
+
 run_lang_gates() {
   if [ -f go.mod ]; then
     gate go; go vet ./... && go build ./... && go test ./...
@@ -125,6 +154,23 @@ run_lang_gates() {
   fi
   if [ -f pubspec.yaml ]; then
     gate flutter; flutter analyze && flutter test
+  fi
+  # Gates de arquitectura y SQL: la CONFIG del repo es el opt-in (sin config,
+  # silencio). Con config presente son gates duros — igual que go/ts. Config
+  # sin herramienta instalada = warning honesto, no un gate fingido.
+  if [ -f .importlinter ] || grep -q '\[tool\.importlinter\]' pyproject.toml 2>/dev/null; then
+    if command -v lint-imports >/dev/null; then gate "import-linter"; lint-imports
+    else echo "⚠️  config de import-linter presente pero lint-imports no instalado — gate saltado"; fi
+  fi
+  if [ -f .go-arch-lint.yml ]; then
+    if command -v go-arch-lint >/dev/null; then gate "go-arch-lint"; go-arch-lint check
+    else echo "⚠️  .go-arch-lint.yml presente pero go-arch-lint no instalado — gate saltado"; fi
+  fi
+  # squawk: lint de migraciones SQL NUEVAS del diff (las viejas no se re-litigan)
+  if command -v squawk >/dev/null; then
+    local migs
+    migs="$(git diff origin/main..HEAD --name-only --diff-filter=A | grep -E '(^|/)migrations?/.*\.sql$' || true)"
+    if [ -n "$migs" ]; then gate "squawk (migraciones)"; squawk $migs; fi
   fi
   if [ -f buf.yaml ]; then
     gate buf
@@ -269,6 +315,67 @@ gate_policy_and_evidence() {
     --verdict "$v" --require-kind test
 }
 
+# ── Gates en paralelo ─────────────────────────────────────────────────
+# Los grupos no comparten orden real entre sí (cada uno es read-only sobre
+# el worktree o corre su propia toolchain); DENTRO de un grupo el orden se
+# conserva (check_verdict antes que evidence). Cada grupo corre en subshell
+# con su propio CURRENT_GATE y escribe su exit a un archivo: un rojo no
+# oculta a los demás, y el implementer recibe TODOS los errores en un solo
+# prompt de fix en vez de descubrirlos ronda por ronda.
+GDIR=""; PAR_PIDS=""; PAR_SLOTS=""
+par() {  # par <slot> <gate-fn>... — corre un grupo de gates en background
+  local slot="$1"; shift
+  (
+    # PAR_SLOT: copia a scope de subshell. El trap EXIT de un subshell que
+    # muere por set -e corre DESPUÉS de desmontar los locals de la función
+    # (bash 3.2 y 5.x): referenciar $slot ahí es unbound variable.
+    PAR_SLOT="$slot"
+    CURRENT_GATE=""
+    group_exit() {
+      local rc=$?
+      if [ "$rc" -eq 0 ]; then
+        [ -n "${CURRENT_GATE:-}" ] && emit gate "$CURRENT_GATE" true
+      else
+        emit gate "$CURRENT_GATE — BLOQUEÓ el ship de $REPO (exit $rc)" false
+        echo "⛔ gate '$CURRENT_GATE' falló (exit $rc)"
+      fi
+      echo "$rc" > "$GDIR/$PAR_SLOT.rc"
+    }
+    trap group_exit EXIT
+    local fn; for fn in "$@"; do "$fn"; done
+  ) > "$GDIR/$slot.out" 2>&1 &
+  PAR_PIDS="$PAR_PIDS $!"
+  PAR_SLOTS="$PAR_SLOTS $slot"
+}
+
+run_parallel_gates() {
+  # cierra el gate serial anterior (mismo contrato que gate())
+  [ -n "${CURRENT_GATE:-}" ] && [ "$CURRENT_GATE" != "preflight" ] \
+    && emit gate "$CURRENT_GATE" true
+  CURRENT_GATE=""
+  GDIR="$(mktemp -d "${TMPDIR:-/tmp}/ship-gates.XXXXXX")"
+  PAR_PIDS=""; PAR_SLOTS=""
+  echo "── gates en paralelo: lang ∥ security ∥ tests ∥ veredicto ──"
+  par lang      run_lang_gates
+  par security  run_security_gates
+  par tests     gate_tests_untouched
+  par veredicto check_verdict gate_evidence gate_policy_and_evidence
+  local pid; for pid in $PAR_PIDS; do wait "$pid" 2>/dev/null || true; done
+  local slot rc failed=""
+  for slot in $PAR_SLOTS; do
+    cat "$GDIR/$slot.out"
+    rc="$(cat "$GDIR/$slot.rc" 2>/dev/null || echo 1)"
+    [ "$rc" -eq 0 ] || failed="$failed $slot"
+  done
+  rm -rf "$GDIR"
+  if [ -n "$failed" ]; then
+    CURRENT_GATE="gates paralelos:$failed"
+    echo "❌ gates rojos:$failed — TODOS los errores están arriba. Corrige TODO"
+    echo "   en UNA iteración (cada gate trae su remediación) y re-corre ship.sh."
+    exit 3
+  fi
+}
+
 # ── Loop de ship ──────────────────────────────────────────────────────
 acquire_lock
 cd "$WT"
@@ -279,12 +386,8 @@ while [ "$attempt" -lt "$MAX_RETRY" ]; do
   git fetch origin
   git rebase origin/main || { git rebase --abort; echo "❌ conflicto de rebase — resuélvelo en el worktree $WT"; exit 4; }
   gate_trailer
-  gate_tests_untouched
-  run_lang_gates
-  run_security_gates
-  check_verdict
-  gate_evidence
-  gate_policy_and_evidence
+  gate_lane
+  run_parallel_gates
   if git push origin HEAD:main; then
     sha="$(git rev-parse --short HEAD)"
     echo "{\"repo\":\"$REPO\",\"sha\":\"$sha\",\"shipped_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >> "$WS/tasks/$TASK/ship.log"

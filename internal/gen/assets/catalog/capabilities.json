@@ -129,7 +129,7 @@
       "bin": "gcloud",
       "category": "infra",
       "detect": "terraform con provider google",
-      "install": "https://cloud.google.com/sdk/docs/install",
+      "install": "brew install --cask gcloud-cli",
       "name": "gcloud",
       "permission_tier": "read-only",
       "profiles": [
@@ -322,6 +322,7 @@
       "install": "uv tool install graphifyy",
       "name": "graphify",
       "permission_tier": "read-only",
+      "post_install": "graphify install",
       "profiles": [
         "arquitecto",
         "jardinero",

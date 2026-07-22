@@ -42,11 +42,21 @@ if [ "$fails" -ge 3 ]; then
   exit 78   # EX_CONFIG: visible en el estado del CronJob
 fi
 
-# ── Política de modelos desde models.yaml (esquema fijo) ─────────────
-MODEL="$(grep -E "^  $JOB_TIER:" "$MODELS" | sed -E 's/.*model: *([a-z0-9.-]+).*/\1/' | head -1)"
-EFFORT="$(grep -E "^  $JOB_TIER:" "$MODELS" | sed -E 's/.*effort: *([a-z]+).*/\1/' | head -1)"
-BUDGET="$(awk '/^budgets:/{f=1;next} f && /^  '"$JOB_TIER"':/{print $2; exit}' "$MODELS")"
-[ -n "$MODEL" ] || { log "❌ tier '$JOB_TIER' no está en models.yaml"; ledger config-error 0; exit 78; }
+# ── Política de modelos desde models.yaml (aliases fast|smart|deep) ──
+# Los tiers hablan en aliases; stamp-models.sh los traduce al ID real del
+# proveedor activo. Si la resolución falla, el valor crudo pasa tal cual
+# (compat con models.yaml antiguos que traían IDs directos).
+ysec() {  # ysec <sección> — valor de $JOB_TIER dentro de esa sección
+  awk -v s="$1:" -v k="$JOB_TIER:" '
+    /^[^ #]/ { insec = ($1 == s) }
+    insec && $1 == k && /^  / { print $2; exit }
+  ' "$MODELS"
+}
+TIER_ALIAS="$(ysec cronjobs)"
+EFFORT="$(ysec cronjob_effort)"; EFFORT="${EFFORT:-medium}"
+BUDGET="$(ysec budgets)"
+[ -n "$TIER_ALIAS" ] || { log "❌ tier '$JOB_TIER' no está en models.yaml (sección cronjobs)"; ledger config-error 0; exit 78; }
+MODEL="$(bash "$WS/scripts/stamp-models.sh" resolve "$TIER_ALIAS" 2>/dev/null || echo "$TIER_ALIAS")"
 
 # ── Detector (determinista) ──────────────────────────────────────────
 FINDINGS="$(mktemp)"; export FINDINGS

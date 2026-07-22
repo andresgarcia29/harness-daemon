@@ -207,6 +207,30 @@ drafts=$(grep -l "status: DRAFT" "$WS"/.claude/agents/*.md "$WS"/docs/constituti
 # 10 · Capa SDD y modelos
 [ -f "$WS/docs/constitution.md" ] && ok "constitution.md presente" || warn "sin docs/constitution.md — los agentes no tienen tie-breaker"
 [ -f "$WS/models.yaml" ] && ok "models.yaml presente" || warn "sin models.yaml — sin política de ruteo/escalación de modelos"
+if [ -x "$WS/scripts/stamp-models.sh" ] && [ -f "$WS/models.yaml" ]; then
+  if bash "$WS/scripts/stamp-models.sh" check >/dev/null 2>&1; then
+    ok "agentes alineados con models.yaml (provider + aliases)"
+  else
+    fail "frontmatter de agentes desalineado con models.yaml" "make models (re-estampa desde la política)"
+  fi
+fi
+[ -f "$WS/AGENTS.md" ] && ok "AGENTS.md presente (mapa multi-herramienta)" || warn "sin AGENTS.md — Cursor/Kimi/otros agentes no tienen punto de entrada"
+# beads: TODO el pipeline de implement ordena por `bd ready --json` — si el
+# workspace no está inicializado, /auto muere en la primera consulta del DAG.
+if command -v bd >/dev/null 2>&1; then
+  if (cd "$WS" && bd ready --json >/dev/null 2>&1); then
+    ok "beads operativo (bd ready responde — el DAG de tareas tiene motor)"
+  else
+    warn "bd instalado pero 'bd ready --json' falla en el workspace — inicializa beads (bd init) o el pipeline no puede ordenar el DAG"
+  fi
+fi
+if command -v graphify >/dev/null 2>&1; then
+  if [ -f "$WS/graphify-out/graph.json" ] || [ -f "$WS/repos/graphify-out/graph.json" ]; then
+    ok "grafo de graphify construido (graphify query responde de verdad)"
+  else
+    warn "graphify instalado pero SIN grafo — 'graphify query' falla y los agentes caen a grep masivo; corre scripts/graph-refresh.sh (o make graph)"
+  fi
+fi
 [ -d "$WS/specs" ] && ok "specs/ presente ($(ls "$WS/specs" 2>/dev/null | wc -l | tr -d ' ') capabilities)" || warn "sin specs/ — los abogados litigan sin documento citable"
 
 # 11 · Cronjobs self-healing
