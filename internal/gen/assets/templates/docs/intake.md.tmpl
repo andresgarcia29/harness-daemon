@@ -49,6 +49,29 @@ El rebote SIEMPRE propone la corrección: preguntas específicas o el
 borrador de criterios que el intake infiere, para que el humano solo
 confirme.
 
+## Carriles — el pipeline se dimensiona al blast radius
+
+La seguridad del harness vive en los gates deterministas, el canary y el
+rollback, NO en el número de fases LLM. Por eso el intake clasifica cada
+tarea en un carril con señales **deterministas** (`inventory.json`, grafo,
+`manifest.yaml`):
+
+| Carril | Señales (todas) | Qué salta | Qué NO cambia jamás |
+|---|---|---|---|
+| **express** | 1 repo · 1 dominio · sin proto/migraciones/infra · sin decisión de arquitectura | RFC completo: el orquestador escribe mini-plan + delta-spec mínimo | los 8+ gates de ship.sh, compliance matrix, evidencia, canary, rollback |
+| **standard** | 2-3 repos · dominios no cruzados · sin breaking | los abogados (no hay frontera que defender) | ídem |
+| **full** | cruza ownership · breaking · servicio nuevo · migración | nada — pipeline completo | ídem |
+
+Tres redes hacen segura la clasificación:
+1. En duda entre dos carriles, gana el MAYOR.
+2. `gate_lane` en ship.sh verifica el diff REAL contra el carril
+   declarado (`state.json`): un express que tocó contratos/migraciones
+   no pasa — la clasificación es propuesta, el gate es ley.
+3. Escalar es barato y pre-aprobado: `harness-policy.py escalate` sube
+   el carril y re-encauza por `/rfc` conservando el worktree.
+   Equivocarse de carril cuesta una re-entrada, jamás un ship sin la
+   deliberación que tocaba.
+
 ## Entrada por prompt (`/auto "…"`) — el mismo contrato, sin rebote
 
 `/auto` acepta un prompt literal en vez de un ticket. La plantilla de

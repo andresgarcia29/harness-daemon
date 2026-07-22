@@ -47,6 +47,17 @@ def state_path(task_dir: Path) -> Path:
     return task_dir / "state.json"
 
 
+def lane_transitions(policy: dict, state: dict) -> dict:
+    """Transiciones vigentes para el carril de la tarea.
+
+    Un carril sin `allowed_transitions` propio hereda el grafo por defecto
+    (standard y full son el pipeline completo; express salta rfc)."""
+    workflow = policy.get("workflow", {})
+    lane = state.get("lane", "full")
+    lane_cfg = workflow.get("lanes", {}).get(lane, {})
+    return lane_cfg.get("allowed_transitions") or workflow.get("allowed_transitions", {})
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     task_dir = Path(args.task_dir).resolve()
     path = state_path(task_dir)
@@ -57,17 +68,52 @@ def cmd_init(args: argparse.Namespace) -> int:
         fail("POLICY-SCHEMA-003", "policy requiere schema: 1")
     if args.budget_usd is not None and (not math.isfinite(args.budget_usd) or args.budget_usd <= 0):
         fail("POLICY-BUDGET-003", "budget_usd debe ser finito y mayor que cero")
+    known_lanes = policy.get("workflow", {}).get("lanes", {"full": {}})
+    if args.lane not in known_lanes:
+        fail("POLICY-LANE-001", f"carril desconocido: {args.lane} (permitidos: {sorted(known_lanes)})")
     state = {
         "schema": 1,
         "task_id": task_dir.name,
         "phase": policy["workflow"]["initial_phase"],
+        "lane": args.lane,
         "review_rounds": 0,
         "budget_usd": args.budget_usd,
         "spent_usd": 0.0,
         "history": [],
     }
     atomic(path, state)
-    print(f"✅ {task_dir.name}: phase={state['phase']}")
+    print(f"✅ {task_dir.name}: phase={state['phase']} lane={args.lane}")
+    return 0
+
+
+def cmd_escalate(args: argparse.Namespace) -> int:
+    """Sube la tarea de carril y la re-encauza por la deliberación que saltó.
+
+    Escalar es barato a propósito: equivocarse de carril cuesta una re-entrada
+    por rfc, jamás un ship sin la deliberación que tocaba."""
+    task_dir = Path(args.task_dir).resolve()
+    policy = load(Path(args.policy), "policy")
+    path = state_path(task_dir)
+    state = load(path, "estado")
+    order = policy.get("workflow", {}).get("lane_escalation", ["express", "standard", "full"])
+    current_lane = state.get("lane", "full")
+    if args.to not in order or current_lane not in order:
+        fail("POLICY-LANE-001", f"carril desconocido: {args.to}")
+    if order.index(args.to) <= order.index(current_lane):
+        fail("POLICY-LANE-002", f"solo se escala hacia arriba: {current_lane} → {args.to}")
+    if state.get("phase") == "blocked":
+        fail("POLICY-LANE-003", "tarea bloqueada: resume antes de escalar")
+    previous_phase = state.get("phase")
+    # La deliberación saltada se recupera: fases posteriores a rfc regresan a rfc.
+    destination = "rfc" if previous_phase in ("implement", "review", "ship") else previous_phase
+    state["lane"] = args.to
+    state["phase"] = destination
+    state.setdefault("history", []).append({
+        "from": previous_phase, "to": destination, "actor": args.actor,
+        "lane": f"{current_lane}→{args.to}", "reason": args.reason,
+    })
+    atomic(path, state)
+    print(f"⤴️  {task_dir.name}: carril {current_lane} → {args.to}, fase {destination}")
     return 0
 
 
@@ -171,9 +217,10 @@ def cmd_transition(args: argparse.Namespace) -> int:
     path = state_path(task_dir)
     state = load(path, "estado")
     current = state.get("phase")
-    allowed = policy.get("workflow", {}).get("allowed_transitions", {}).get(current, [])
+    allowed = lane_transitions(policy, state).get(current, [])
     if args.phase not in allowed:
-        fail("POLICY-TRANSITION-001", f"transición no permitida: {current} → {args.phase}")
+        lane = state.get("lane", "full")
+        fail("POLICY-TRANSITION-001", f"transición no permitida ({lane}): {current} → {args.phase}")
     rounds = state.get("review_rounds", 0)
     if args.phase == "review":
         rounds += 1
@@ -225,7 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init")
     init.add_argument("task_dir")
     init.add_argument("--budget-usd", type=float)
+    init.add_argument("--lane", default="full")
     init.set_defaults(func=cmd_init)
+    escalate = sub.add_parser("escalate")
+    escalate.add_argument("task_dir")
+    escalate.add_argument("--to", required=True)
+    escalate.add_argument("--actor", required=True)
+    escalate.add_argument("--reason", default="")
+    escalate.set_defaults(func=cmd_escalate)
     transition = sub.add_parser("transition")
     transition.add_argument("task_dir")
     transition.add_argument("phase")

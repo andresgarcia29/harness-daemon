@@ -25,6 +25,9 @@ detect() {
   done
   # dumps de quiet.sh >7 días
   find .cache/quiet -name "*.log" -mtime +7 -delete 2>/dev/null || true
+  # el grafo de graphify no se pudre: refresh incremental si hay HEADs
+  # nuevos (fail-open: sin graphify instalado no hace nada)
+  [ -x scripts/graph-refresh.sh ] && bash scripts/graph-refresh.sh >> "$FINDINGS.log" 2>&1 || true
   # ¿la memoria episódica necesita destilación? (esto SÍ es del agente)
   local mem_lines=0
   [ -f ".claude/MEMORY.md" ] && mem_lines=$(wc -l < .claude/MEMORY.md | tr -d ' ')

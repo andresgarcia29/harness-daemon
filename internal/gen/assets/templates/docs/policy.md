@@ -9,7 +9,7 @@ ship son válidos.
 Una tarea nueva ejecuta:
 
 ```bash
-scripts/harness-policy.py init tasks/<task-id>
+scripts/harness-policy.py init tasks/<task-id> --lane <express|standard|full>
 ```
 
 Toda transición usa:
@@ -18,8 +18,23 @@ Toda transición usa:
 scripts/harness-policy.py transition tasks/<task-id> <fase> --actor <identidad>
 ```
 
-El motor conserva `tasks/<task-id>/state.json` con fase, rondas de review e
-historial. No se edita a mano.
+El motor conserva `tasks/<task-id>/state.json` con fase, **carril**, rondas de
+review e historial. No se edita a mano.
+
+## Carriles
+
+Las transiciones válidas dependen del carril: `express` permite
+`intake → implement` (salta rfc); `standard` y `full` exigen el grafo
+completo. `escalate` sube el carril (solo hacia arriba: express →
+standard → full) y re-encauza la tarea por `rfc` si ya había pasado esa
+fase — la deliberación saltada se recupera, el worktree se conserva:
+
+```bash
+scripts/harness-policy.py escalate tasks/<task-id> --to standard --actor orchestrator
+```
+
+`gate_lane` en ship.sh es quien verifica que el diff real respete el
+carril declarado (códigos `POLICY-LANE-001..003`).
 
 `validate-dag` exige IDs únicos, repos válidos, dependencias existentes y un
 grafo sin ciclos. `record-cost` conserva un total monotónico y bloquea cuando

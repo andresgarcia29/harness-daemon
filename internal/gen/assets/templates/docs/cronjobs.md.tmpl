@@ -14,7 +14,7 @@ circuit breaker (3 fallos → se apaga y avisa) y ledger de gasto
 |---|---|---|---|---|
 | ci-doctor | cada 30 min (o workflow_run) | runs rojos en main | fix quirúrgico o PR de revert | medium |
 | dep-shepherd | tras Renovate diario | PRs de deps sin automerge | matriz de riesgo, grep de imports, merge o fix | medium |
-| vuln-watch | `0 3 * * *` | vulns NUEVAS (osv-scanner, diff vs ayer) | PR de bump con tests | medium |
+| vuln-watch | `0 3 * * *` | vulns NUEVAS (osv-scanner deps + trivy config si está, diff vs ayer) | PR de bump con tests | medium |
 | flake-warden | `0 1 * * *` | flip-rate en JUnit XML archivados | cuarentena + root-cause top 3 | expensive |
 | daily-digest | `0 6 * * 1-5` | (siempre) | changelog + Slack + gasto de la noche | cheap |
 | dead-code-reaper | `0 2 * * 6` | knip/vulture/deadcode vs whitelist | borra en lotes con tests; FP → whitelist | medium |
@@ -24,9 +24,12 @@ circuit breaker (3 fallos → se apaga y avisa) y ledger de gasto
 | slo-watchdog | webhook Alertmanager | burn-rate crítico | diagnóstico read-only + PR de revert | medium |
 | harness-janitor | `0 23 * * *` | worktrees/ramas/locks huérfanos; memoria inflada | destila memoria; archiva zombies | cheap |
 | rule-miner | `0 3 1 * *` (mensual) | commits fix/revert + blocking repetidos | mina reglas semgrep VALIDADAS | expensive |
+| skill-miner | `0 4 2 * *` (mensual) | supuestos idénticos en ≥3 tareas; decisiones/paradas repetidas en el bus | empaqueta procedimientos repetidos como skills (guía: skill-creator); PR = ratificación | expensive |
 
-rule-miner es el multiplicador: convierte cada bug del mes en un
-detector determinista nuevo — el sistema mejora sin ampliar gasto.
+rule-miner y skill-miner son los multiplicadores: el primero convierte
+cada bug del mes en un detector determinista nuevo; el segundo convierte
+cada procedimiento re-explicado en una skill — el sistema mejora sin
+ampliar gasto, en código Y en conocimiento.
 
 ## Cómo correrlos
 

@@ -16,17 +16,28 @@ resuelta en `tasks/<id>/assumptions.md`.
 
 ```
 /feature (intake)          valida el ticket o lo rebota (needs-spec)
-   ↓ tasks/<id>/task.md
-/rfc                       abogados responden UNA vez (JSON) · arquitecto sintetiza
-   ↓ tasks/<id>/plan.md + beads (DAG con deps)
-/implement                 worktrees + implementers por tarea (paralelo si el DAG lo permite)
+   ↓ tasks/<id>/task.md + CARRIL (express | standard | full, por blast radius)
+/rfc                       solo standard/full · abogados SOLO si hay frontera cruzada
+   ↓ tasks/<id>/plan.md + beads (DAG)      [express: mini-plan del orquestador, salta aquí]
+/implement                 worktrees + briefs YA prefetcheados · implementers en paralelo
    ↓ commits con trailer Task: <id>
-/review                    reviewer → verdict-<repo>.json · qa local → campo qa
+/review                    reviewer ∥ qa EN PARALELO · re-review incremental en rondas ≥2
    ↓ verdict: pass + qa: pass
-/ship                      ship.sh (gates) → deploy-watch.sh (Actions→Kargo→ArgoCD→smoke)
+/ship                      ship.sh: rebase→trailer→lane en serie; el resto de gates EN PARALELO
    ↓ 🟢 siguiente tarea del DAG   |   🔴 ROLLBACK PRIMERO, diagnóstico después
 ticket-close.sh            comenta evidencia y cierra el ticket
 ```
+
+## Carriles (ver docs/harness/intake.md)
+
+El pipeline se dimensiona al blast radius: **express** (1 repo, 1 dominio,
+sin contratos) salta el RFC y va con 2 sesiones LLM (implementer +
+reviewer); **standard** usa architect sin abogados; **full** es el
+pipeline completo. Los gates de ship.sh son IDÉNTICOS en los tres — el
+carril recorta deliberación LLM, jamás verificación — y `gate_lane`
+verifica el diff real contra el carril declarado: la clasificación es
+propuesta, el gate es ley. Escalar carril (`harness-policy.py escalate`)
+es barato y conserva el worktree.
 
 ## Roles
 

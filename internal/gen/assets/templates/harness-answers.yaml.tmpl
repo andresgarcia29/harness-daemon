@@ -25,7 +25,8 @@ flow: {{FLOW}}
 
 # Sandwich de razonamiento: juicio caro solo donde hay juicio.
 models:
-  architect: {{MODEL_ARCHITECT}}      # planeación, síntesis de RFC
+  provider: {{MODEL_PROVIDER}}        # anthropic | vertex | bedrock | kimi | openrouter
+  architect: {{MODEL_ARCHITECT}}      # ALIAS (fast|smart|deep): planeación, síntesis de RFC
   reviewer: {{MODEL_REVIEWER}}        # veredictos de review
   implementer: {{MODEL_IMPLEMENTER}}  # ejecución de tareas
   mechanical: {{MODEL_MECHANICAL}}    # digest, triage, commits

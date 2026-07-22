@@ -1,0 +1,78 @@
+# {{PROJECT_NAME}} — mapa para agentes (cualquier herramienta)
+
+Este workspace tiene un **harness de ingeniería agéntica multi-repo**.
+Filosofía: *los agentes proponen, los sistemas deterministas verifican.*
+Este archivo es el estándar AGENTS.md: si eres Cursor, Kimi Code, Codex,
+Gemini CLI o cualquier otro agente, ESTE es tu punto de entrada. Claude
+Code lee `CLAUDE.md` (mismo mapa, más los hooks/comandos nativos).
+
+## Las leyes (válidas para TODA herramienta)
+
+1. **Push a main SOLO vía `scripts/ship.sh <task-id> <repo>`.** Es la
+   única puerta: rebase, tests, contratos, secretos, semgrep, veredicto
+   de review y evidencia. Un push directo es un incidente, no un atajo.
+2. **Nunca trabajes en `repos/`** (clones canónicos, intocables). El
+   trabajo vive en `worktrees/<task-id>/<repo>` — créalos con
+   `scripts/worktree-task.sh <task-id> <repos...>`.
+3. **Todo commit lleva el trailer `Task: <task-id>`.**
+4. **Los valores de secretos jamás tocan chat, commits ni logs.** Solo
+   `scripts/with-secrets.sh <cmd>` inyecta; `.secrets` no se lee.
+5. **Las fases de una tarea las mueve `scripts/harness-policy.py`**
+   (`transition`, `pause`, `escalate`) — el estado es
+   `tasks/<id>/state.json` y no se edita a mano.
+6. **Contratos proto: expand/contract siempre** (buf breaking es gate).
+7. Decisiones de arquitectura irreversibles → ADR `PROPOSED` en
+   `docs/adr/` y esperar ratificación humana.
+
+⚠️ **Enforcement por herramienta**: en Claude Code, hooks locales
+(`.claude/hooks/`) bloquean el push directo y la edición de `repos/`
+ANTES de que ocurran. En otras herramientas esos hooks NO corren: las
+leyes siguen siendo obligatorias, pero el freno automático local no
+existe — actívale branch protection a `main` en el remoto como red
+equivalente, y trata las leyes 1-2 como si el hook estuviera mirando.
+
+## El pipeline (y cómo correrlo sin Claude Code)
+
+Los "comandos" viven en `.claude/commands/*.md` y **son playbooks en
+markdown, legibles por cualquier agente**: si tu herramienta no soporta
+slash-commands, abre el archivo y sigue sus pasos tal cual.
+
+- `auto.md` — el pipeline completo (ticket o prompt → producción):
+  intake → carril → [rfc] → implement → review → ship → deploy → archive.
+- `rfc.md`, `implement.md`, `review.md`, `ship.md`, `archive.md` — las
+  fases sueltas. `feature.md` = intake con humano.
+
+Los roles de `.claude/agents/*.md` (architect, implementer, reviewer,
+qa, abogados `svc-*`) son definiciones de agente de Claude Code; en
+otras herramientas úsalas como **system prompts** del rol equivalente.
+
+Las **skills** de `.claude/skills/` son procedimientos empaquetados del
+workspace (también markdown puro): consúltalas cuando su `description`
+matchee tu tarea. `skill-creator/SKILL.md` es la guía para crear nuevas.
+
+## Modelos — una sola perilla
+
+`models.yaml` es la única fuente: aliases `fast | smart | deep` por
+proveedor (`anthropic | vertex | bedrock | kimi | openrouter`), rol →
+alias, y overrides por agente. Cambiar modelo o proveedor = editar UNA
+línea + `make models`. Para resolver un alias al ID real de tu
+proveedor: `scripts/stamp-models.sh resolve <alias|rol>`. Por tarea:
+`model: <alias>` en el frontmatter de `tasks/<id>/task.md`.
+
+## Dónde está la verdad
+
+| Qué | Dónde |
+|---|---|
+| Lista canónica de repos + DAG | `manifest.yaml` |
+| Principios innegociables | `docs/constitution.md` |
+| Ownership de datos por servicio | `docs/architecture/map.md` |
+| Comportamiento actual (specs EARS) | `specs/<capability>/spec.md` |
+| Decisiones vigentes | `docs/adr/` |
+| Estado por tarea | `tasks/<id>/` (task.md, plan.md, assumptions.md, verdicts) |
+| Contrato de intake y carriles | `docs/harness/intake.md` |
+| Pipeline completo | `docs/harness/pipeline.md` |
+| Convenciones de CADA repo | `repos/<repo>/CLAUDE.md` — léelo antes de tocar ese repo |
+
+Ante contradicción: spec maestra > ADR vigente > CLAUDE.md del repo >
+patrón del código. Un supuesto sin evidencia de esas cuatro fuentes es
+una invención — y las invenciones no se implementan.
