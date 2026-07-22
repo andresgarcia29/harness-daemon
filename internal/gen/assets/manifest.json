@@ -1,5 +1,5 @@
 {
-  "installer_commit": "eccec7d993acb9a29e7dc3f35c45c2df6f97f8dd",
+  "installer_commit": "a7494d1e34d0cb3889f8237af8d8202dc28bb0ee",
   "files": {
     "catalog/capabilities.json": "8ffda296f8016a12a3dd2c4bfbd56aba57089a763ba9dfae003e1c4e24d326f3",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
@@ -16,7 +16,7 @@
     "templates/agents/reviewer.md.tmpl": "1282b09601b38eff4ba21ca694bcdc05cdfd750762e4ebe4e22244e4e2c6c135",
     "templates/agents/svc-agent.md.tmpl": "84c6c175a214b5c547c7ed17f223b6a16c27bd61b3aa312a14eec86e9161772a",
     "templates/commands/archive.md.tmpl": "a7038db73755d7c6ae8743e6f97bf458603f21dda68e68fef681c34ca587c899",
-    "templates/commands/auto.md.tmpl": "874029550b89e7fe6ad422f1452c57daaf195278a54b695cbfd800bd7e430613",
+    "templates/commands/auto.md.tmpl": "b5da6774a13bd0c03d28c65deb8083f3608f5ed2a9d048f4023bf4467192a17c",
     "templates/commands/feature.md.tmpl": "ee0a08bf7ebc792852720150791113b85cfa3c4bb37d54952079d44680ccc7a9",
     "templates/commands/implement.md.tmpl": "96773ef19c2ea47ec61deb786aeb6944985cbaf4140d26fd8cc6027575c694d6",
     "templates/commands/promote.md.tmpl": "2ce9a881ae162642b33ff1ae02026ebc5cc26c5ae9493772b1906386cf9d597d",

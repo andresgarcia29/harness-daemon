@@ -38,7 +38,9 @@ del trabajo y no habrá aclaraciones. Entonces:
 1. `id = AUTO-$(date +%Y%m%d)-<slug-de-3-palabras>` (verifica que no
    exista; sufija `-2` si choca).
 2. Escribe `tasks/<id>/task.md` con el formato de `docs/harness/intake.md`
-   y `origin: prompt` en el frontmatter. Los campos que el prompt no
+   y `origin: prompt` en el frontmatter, **incluyendo `title:`** (verbo +
+   resultado observable, el mismo del heading): el panel lee ese campo y
+   una tarea sin él aparece como "Sin título registrado". Los campos que el prompt no
    trae **los redactas TÚ** — ese es el trabajo:
    - **Criterios de aceptación**: derívalos hasta que sean binarios y
      ejercitables por QA o por el smoke del canary. "Que ande rápido"
