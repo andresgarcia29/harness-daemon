@@ -75,14 +75,23 @@ func RunDoctor(ws string, log func(string)) error {
 		return err
 	}
 	last := ""
+	var fails []string
 	sc := bufio.NewScanner(out)
 	for sc.Scan() {
 		if line := strings.TrimSpace(sc.Text()); line != "" {
 			log(line)
 			last = line
+			// el error del finish es un PROMPT: sin la lista de ❌, quien lo
+			// lee (humano o agente) tiene que ir a pescar al log del doctor
+			if strings.Contains(line, "❌") {
+				fails = append(fails, line)
+			}
 		}
 	}
 	if err := cmd.Wait(); err != nil {
+		if len(fails) > 0 {
+			last = last + " · " + strings.Join(fails, " · ")
+		}
 		return fmt.Errorf("el doctor reporta fallos (%s) — si son binarios faltantes, `make init` en el workspace instala las capacidades elegidas; corrige y reintenta", last)
 	}
 	return nil
