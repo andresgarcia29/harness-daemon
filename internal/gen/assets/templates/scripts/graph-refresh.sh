@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# graph-refresh.sh — mantiene VIVO el grafo de graphify. $0 tokens (tree-sitter).
+# graph-refresh.sh: mantiene VIVO el grafo de graphify. $0 tokens (tree-sitter).
 #
 # El hueco que cierra: los prompts dicen "usa graphify query, no grep masivo",
-# pero una query contra un grafo inexistente o viejo falla o miente — y el
+# pero una query contra un grafo inexistente o viejo falla o miente, y el
 # agente cae a grep, pagando los tokens que el grafo existía para ahorrar.
 # Este script es el ciclo de vida completo: construye la primera vez,
 # refresca incremental (--update) después, y NO hace nada si ningún HEAD
@@ -10,7 +10,7 @@
 #
 # Lo llaman: el prefetch de /auto y /rfc (background), harness-janitor
 # (nightly) y tú (make graph). Fail-open: sin graphify instalado
-# (capacidad no elegida) sale 0 en silencio — jamás bloquea un pipeline.
+# (capacidad no elegida) sale 0 en silencio; jamás bloquea un pipeline.
 set -u
 
 WS="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,11 +38,11 @@ fi
 cd "$WS"
 if graph_json >/dev/null; then
   graphify repos --update >/dev/null 2>&1 \
-    || { echo "⚠️  graphify --update falló — fail-open, se reintenta en el próximo refresh" >&2; exit 0; }
+    || { echo "⚠️  graphify --update falló; fail-open, se reintenta en el próximo refresh" >&2; exit 0; }
 else
   echo "→ grafo inicial de repos/ (primera vez: puede tardar unos minutos)"
   graphify repos >/dev/null 2>&1 \
-    || { echo "⚠️  graphify build falló — fail-open" >&2; exit 0; }
+    || { echo "⚠️  graphify build falló; fail-open" >&2; exit 0; }
 fi
 printf '%s' "$heads" > "$STAMP"
 echo "✓ grafo al día ($(graph_json 2>/dev/null || echo 'graphify-out/'))"
