@@ -70,6 +70,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "CLAUDE.md.tmpl", Dst: "CLAUDE.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "AGENTS.md.tmpl", Dst: "AGENTS.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "skills/skill-creator/SKILL.md", Dst: ".claude/skills/skill-creator/SKILL.md", Mode: reg, When: always})
+	add(GenFile{Src: "skills.yaml.tmpl", Dst: "skills.yaml", Mode: reg, Render: true, When: always, Keep: true})
 	add(GenFile{Src: "manifest.yaml.tmpl", Dst: "manifest.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "harness-answers.yaml.tmpl", Dst: "harness-answers.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Inline: []byte(o.Version + "\n"), Dst: ".harness-version", Mode: reg, When: always})
@@ -150,7 +151,8 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 		When: func(a *Answers, _ *Inventory) bool { return a.Tickets.Provider == "linear" }})
 	for _, s := range []string{"worktree-task.sh", "quiet.sh", "with-secrets.sh", "emit.sh",
 		"build-slot.sh", "gowork.sh", "py.sh", "fe.sh",
-		"repo-brief.sh", "stamp-models.sh", "graph-refresh.sh"} {
+		"repo-brief.sh", "stamp-models.sh", "graph-refresh.sh",
+		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh"} {
 		add(GenFile{Src: "scripts/" + s, Dst: "scripts/" + s, Mode: sh, When: always})
 	}
 	// doctor.sh: la copia autocontenida (viene de assets/scripts, no de templates)

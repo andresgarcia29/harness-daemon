@@ -50,7 +50,9 @@ Dirección de dependencias (ley, referencia del DAG de shipping):
    lockfile). El contenedor es SOLO la compuerta CI pre-ship
    (serializada por la ley 8), no el loop. Dockerfiles de build: cache
    mounts de BuildKit (`RUN --mount=type=cache,…`).
-10. **Prohibido el guion largo "—"** en todo texto que produzcas
+10. **Reproduce gates/scripts SIEMPRE con `bash -c`**: la sesión es
+   zsh y su word-splitting distinto da resultados FALSOS (medido).
+11. **Prohibido el guion largo "—"** en todo texto que produzcas
    (docs, reportes, commits, specs): delata texto de IA. Usa coma, dos
    puntos o paréntesis. (El "──" de cajas de terminal es otro carácter.)
 

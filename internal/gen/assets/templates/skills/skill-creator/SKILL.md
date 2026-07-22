@@ -63,6 +63,23 @@ Reglas de oro:
 - **Multi-herramienta**: las skills son markdown: Cursor/Kimi/otros las
   leen como playbooks vía AGENTS.md, igual que los comandos.
 
+## Las tres capas (dónde vive cada skill)
+
+| Capa | Dónde | Quién la actualiza | Marca |
+|---|---|---|---|
+| upstream | la trae el plugin | `harness update` | manifest del generador |
+| compartida | TU repo de skills, declarada en `skills.yaml` | `make skills` (skills-sync) | archivo `.managed` con repo+ref+sha |
+| local | `.claude/skills/<nombre>/` a secas | tú (o skill-miner) | ninguna: NADIE la pisa |
+
+Regla de colisión: la local SIEMPRE gana; el sync reporta el choque y
+no toca nada. Una `.managed` jamás se edita en sitio (edita en el repo
+fuente y `make skills`).
+
+**Promoción (el /promote de las skills)**: una local que probó su valor
+en varias tareas se muda al repo compartido: `git mv` al repo de
+skills, push, línea en `skills.yaml`, `make skills`. Así las demás
+instancias (y máquinas) la heredan con procedencia auditable.
+
 ## Flujo de creación
 
 1. Nombra el patrón y su evidencia (¿dónde se repitió? cita tareas/fechas).

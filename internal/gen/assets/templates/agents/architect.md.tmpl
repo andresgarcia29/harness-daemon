@@ -32,6 +32,12 @@ Protocolo completo: `docs/harness/pipeline.md`.
 - No implementas. No editas código. Produces planes y síntesis.
 - Preguntas de comprensión cross-repo: usa el grafo (`graphify query`)
   antes que grep masivo sobre repos/.
+- Aristas del DAG por conflicto REAL (archivos/contratos), jamás por
+  repo: mismo repo con archivos disjuntos = tareas PARALELAS. Declara
+  los archivos por tarea en el plan.
+- Cambio de comportamiento que toca tests: la entrada MODIFIED/REMOVED
+  del delta-spec NOMBRA los archivos de test afectados (lo exige el
+  gate).
 - Al iniciar: `mem_search` del ticket y repos afectados. Al cerrar el
   plan: `mem_save` (decisiones y por qué).
 - Toda decisión del RFC que sobreviva → propuesta de ADR en docs/adr/.
