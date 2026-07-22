@@ -30,12 +30,12 @@ type Answers struct {
 		Implementer string `json:"implementer"`
 		Mechanical  string `json:"mechanical"`
 	} `json:"models"`
-	LoopBudget int      `json:"loop_budget"`
-	Autonomy   string   `json:"autonomy"` // full | checkpoint
-	DAG        []string `json:"dag"`
-	Clusters   []Cluster `json:"clusters"`
-	Capabilities []CapSel `json:"capabilities"`
-	Secrets    struct {
+	LoopBudget   int       `json:"loop_budget"`
+	Autonomy     string    `json:"autonomy"` // full | checkpoint
+	DAG          []string  `json:"dag"`
+	Clusters     []Cluster `json:"clusters"`
+	Capabilities []CapSel  `json:"capabilities"`
+	Secrets      struct {
 		Source    string   `json:"source"`
 		Refs      []string `json:"refs"`
 		VaultAddr string   `json:"vault_addr,omitempty"`
@@ -75,8 +75,8 @@ type CapSel struct {
 	Name         string   `json:"name"`
 	Bin          string   `json:"bin,omitempty"`
 	Mcp          string   `json:"mcp,omitempty"`
-	Tier         string   `json:"tier"`            // read-only | read-write | destructive
-	Scope        string   `json:"scope"`           // core | cronjob
+	Tier         string   `json:"tier"`  // read-only | read-write | destructive
+	Scope        string   `json:"scope"` // core | cronjob
 	Profiles     []string `json:"profiles,omitempty"`
 	ToolsAllowed []string `json:"tools_allowed,omitempty"` // nil = todas (se materializa como permissions.deny)
 }
@@ -159,6 +159,31 @@ func (a *Answers) Validate() error {
 // SeedAnswers construye el borrador inicial desde el inventory: clustering por
 // reglas, DAG por capas, secretos por hints. El LLM (enrich) REFINA esto; sin
 // LLM, esto ya es un default honesto.
+// NormalizeModels migra IDs crudos pre-v0.47 a aliases (fast|smart|deep) y
+// asegura provider. Idempotente: aliases quedan igual; IDs desconocidos pasan
+// tal cual (stamp-models reportará el error con remediación).
+func NormalizeModels(a *Answers) {
+	if a.Models.Provider == "" {
+		a.Models.Provider = "anthropic"
+	}
+	alias := func(s string) string {
+		l := strings.ToLower(s)
+		switch {
+		case strings.Contains(l, "opus"):
+			return "deep"
+		case strings.Contains(l, "sonnet"):
+			return "smart"
+		case strings.Contains(l, "haiku"):
+			return "fast"
+		}
+		return s
+	}
+	a.Models.Architect = alias(a.Models.Architect)
+	a.Models.Reviewer = alias(a.Models.Reviewer)
+	a.Models.Implementer = alias(a.Models.Implementer)
+	a.Models.Mechanical = alias(a.Models.Mechanical)
+}
+
 func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *Answers {
 	a := &Answers{}
 	a.Project.Name = filepath.Base(wsPath)
@@ -168,10 +193,11 @@ func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *An
 	if hasAny(inv, "argocd") || hasAny(inv, "kargo") {
 		a.Flow = "trunk-direct-to-prod"
 	}
-	a.Models.Architect = "claude-opus-4-8"
-	a.Models.Reviewer = "claude-opus-4-8"
-	a.Models.Implementer = "claude-sonnet-5"
-	a.Models.Mechanical = "claude-haiku-4-5"
+	a.Models.Provider = "anthropic"
+	a.Models.Architect = "deep"
+	a.Models.Reviewer = "deep"
+	a.Models.Implementer = "smart"
+	a.Models.Mechanical = "fast"
 	a.LoopBudget = 3
 	a.Autonomy = "checkpoint"
 	a.Clusters = SeedClusters(inv, overrides)
