@@ -41,6 +41,11 @@ loop_budget: {{LOOP_BUDGET}}
 # supuestos). Para conducir fase por fase: comandos sueltos, no /auto.
 autonomy: {{AUTONOMY}}
 
+# MinionS (docs/harness/minions-context-distill.md, opt-in): el tier `reader` destila el contexto largo y el
+# tier caro razona sobre el destilado (hasta 5.7× menos costo). Default off:
+# cámbialo a true para probarlo y compara el gasto del architect en el panel.
+context_distill: false
+
 # Orden de shipping: dependencias primero. Verificado por el arquitecto
 # en cada plan; ship.sh no lo impone (los contratos expand/contract lo
 # vuelven no-crítico), pero es la referencia.
