@@ -99,7 +99,12 @@ func (c *Collector) scanBus() {
 		// un evento de fase actualiza la fase de su tarea
 		if rec.Kind == "phase" && rec.Task != "" {
 			if ph := phaseOf(rec.Summary); ph != "" {
-				_ = c.St.UpsertTask(c.Workspace.ID, rec.Task, "", "", ph, e.TS)
+				// enriquecimiento: solo si la tarea no tiene state.json (la
+				// verdad ejecutable); si lo tiene, scanTasks ya mandó la fase
+				// real y un evento viejo no debe pisarla
+				if statePhase(filepath.Join(c.Workspace.Path, "tasks", rec.Task)) == "" {
+					_ = c.St.UpsertTask(c.Workspace.ID, rec.Task, "", "", ph, e.TS)
+				}
 			}
 		}
 	})
@@ -132,13 +137,76 @@ func (c *Collector) scanTasks(now int64) {
 				break
 			}
 		}
+		if title == "" {
+			// /auto escribe el título como heading del cuerpo, no como
+			// frontmatter: sin este fallback, toda tarea origin:prompt
+			// aparecía como "Sin título registrado" (visto en el VPS).
+			for _, ln := range strings.Split(string(b), "\n") {
+				if strings.HasPrefix(ln, "# ") {
+					title = strings.TrimSpace(strings.Trim(ln[2:], "`"))
+					break
+				}
+			}
+		}
 		st, _ := os.Stat(md)
 		ts := now
 		if st != nil {
 			ts = st.ModTime().Unix() // el mtime es un hecho; now es el fallback
 		}
-		_ = c.St.UpsertTask(c.Workspace.ID, id, title, origin, "", ts)
+		// LA FASE VIENE DE state.json (la verdad ejecutable de harness-policy),
+		// jamás solo del bus: una tarea en archive se quedaba pintada en
+		// intake si el orquestador no emitió los eventos de fase (visto en el
+		// VPS). El bus queda como enriquecimiento; los artefactos, como
+		// inferencia para tareas legacy sin state.json.
+		phase := statePhase(d)
+		if phase == "" {
+			phase = phaseFromArtifacts(d)
+		}
+		_ = c.St.UpsertTask(c.Workspace.ID, id, title, origin, phase, ts)
 	}
+}
+
+// statePhase — la fase de tasks/<id>/state.json (vacía si no existe o no parsea).
+func statePhase(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		Phase string `json:"phase"`
+	}
+	if json.Unmarshal(b, &st) != nil {
+		return ""
+	}
+	return st.Phase
+}
+
+// phaseFromArtifacts — inferencia para tareas anteriores al motor de estados:
+// el artefacto más avanzado presente define la fase (mismo principio que el
+// resume de /auto: los artefactos SON el estado).
+func phaseFromArtifacts(dir string) string {
+	has := func(name string) bool {
+		_, err := os.Stat(filepath.Join(dir, name))
+		return err == nil
+	}
+	switch {
+	case has("ship.log"):
+		return "ship"
+	case hasGlob(dir, "verdict-*.json"):
+		return "review"
+	case has("plan.md"):
+		return "implement"
+	case has("assumptions.md"):
+		return "rfc"
+	}
+	// sin artefactos que prueben fase: vacio, para que el bus (enriquecimiento)
+	// pueda aportar la suya sin que la inferencia lo pise
+	return ""
+}
+
+func hasGlob(dir, pat string) bool {
+	m, _ := filepath.Glob(filepath.Join(dir, pat))
+	return len(m) > 0
 }
 
 // ── Fuente 2: transcripts de Claude Code (prestados) ─────────────────────
