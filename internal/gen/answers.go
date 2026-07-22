@@ -24,6 +24,7 @@ type Answers struct {
 	} `json:"instance"`
 	Flow   string `json:"flow"` // trunk-direct-to-prod | trunk-staging | prs
 	Models struct {
+		Provider    string `json:"provider"` // anthropic | vertex | bedrock | kimi | openrouter
 		Architect   string `json:"architect"`
 		Reviewer    string `json:"reviewer"`
 		Implementer string `json:"implementer"`

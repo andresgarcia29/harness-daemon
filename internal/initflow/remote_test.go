@@ -57,6 +57,10 @@ func harnessBin(t *testing.T) string {
 // tenga harness (el bug del primer intento real: command not found por tecla).
 func TestRemoteDryRunSinBinario(t *testing.T) {
 	home := setupEnv(t)
+	// go corre de verdad en estos e2e: su module cache escribe archivos
+	// read-only que caerían dentro del TempDir y el cleanup de testing
+	// muere con permission denied (visto en CI). Cache compartido afuera.
+	t.Setenv("GOMODCACHE", filepath.Join(os.TempDir(), "harness-test-gomodcache"))
 	sshStub(t)
 	// PATH mínimo: SIN harness (el VPS pelón)
 	t.Setenv("PATH", "/usr/bin:/bin")
@@ -95,6 +99,10 @@ func TestRemoteDryRunSinBinario(t *testing.T) {
 
 func TestE2ERemotoConStubSSH(t *testing.T) {
 	home := setupEnv(t)
+	// go corre de verdad en estos e2e: su module cache escribe archivos
+	// read-only que caerían dentro del TempDir y el cleanup de testing
+	// muere con permission denied (visto en CI). Cache compartido afuera.
+	t.Setenv("GOMODCACHE", filepath.Join(os.TempDir(), "harness-test-gomodcache"))
 	sshStub(t)
 	apiStub(t, "pat456")
 	// el "VPS" es esta máquina: harness en ~/.local/bin (remotePATH lo halla)
@@ -112,7 +120,7 @@ func TestE2ERemotoConStubSSH(t *testing.T) {
 	if err := os.WriteFile(claude, []byte(fmt.Sprintf("#!/bin/sh\necho '{\"result\": \"%s\"}'\n", payload)), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range []string{"go", "gitleaks", "semgrep", "ccusage", "go-arch-lint", "gh"} {
+	for _, b := range []string{"go", "gitleaks", "semgrep", "ccusage", "go-arch-lint", "gh", "bd", "gotestsum"} {
 		if err := os.WriteFile(filepath.Join(localBin, b),
 			[]byte("#!/bin/sh\necho "+b+" 1.0\n"), 0o755); err != nil {
 			t.Fatal(err)

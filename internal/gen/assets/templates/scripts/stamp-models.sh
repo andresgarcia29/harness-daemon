@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stamp-models.sh — materializa la política de models.yaml en los agentes.
+# stamp-models.sh: materializa la política de models.yaml en los agentes.
 # Determinista, $0 tokens, cero dependencias (awk de BSD basta).
 #
 # models.yaml habla en ALIASES (fast|smart|deep) y este script los traduce
@@ -23,14 +23,14 @@ MODELS="$WS/models.yaml"
 AGENTS_DIR="$WS/.claude/agents"
 [ -f "$MODELS" ] || { echo "❌ no existe $MODELS"; exit 2; }
 
-yget() {  # yget <sección> <clave> — valor de una clave indentada bajo la sección
+yget() {  # yget <sección> <clave>: valor de una clave indentada bajo la sección
   awk -v s="$1:" -v k="$2:" '
     /^[^ #]/ { insec = ($1 == s) }
     insec && $1 == k && /^  / { sub(/^[ ]*[^ ]*[ ]*/, ""); sub(/[ ]*#.*$/, ""); print; exit }
   ' "$MODELS"
 }
 
-ytop() {  # ytop <clave> — escalar de nivel superior
+ytop() {  # ytop <clave>: escalar de nivel superior
   awk -v k="$1:" '
     /^[^ #]/ && $1 == k { sub(/^[^:]*:[ ]*/, ""); sub(/[ ]*#.*$/, ""); print; exit }
   ' "$MODELS"
