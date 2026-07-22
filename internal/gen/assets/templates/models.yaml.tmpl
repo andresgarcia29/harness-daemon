@@ -1,4 +1,4 @@
-# models.yaml — LA única perilla de modelos del harness.
+# models.yaml: LA única perilla de modelos del harness.
 #
 # Tres niveles, del más simple al más fino (nunca tocas agentes a mano):
 #   · cambiar un rol      → edita `roles:` y corre `make models`
@@ -8,7 +8,7 @@
 #
 # TODO el harness habla en ALIASES (fast | smart | deep). El proveedor los
 # traduce a IDs reales: cambiar de proveedor es cambiar UNA línea
-# (`provider:`) — roles, overrides y comandos no se tocan.
+# (`provider:`); roles, overrides y comandos no se tocan.
 # `scripts/stamp-models.sh` materializa esta política en el frontmatter de
 # .claude/agents/ (determinista, $0 tokens); `make models` es su atajo.
 #
@@ -54,7 +54,7 @@ models.openrouter:
 
 # ── rol → alias ───────────────────────────────────────────────────────
 # Principio (sandwich de razonamiento): el gasto en razonamiento es
-# proporcional al FAN-OUT del artefacto — una spec o un plan lo leen N
+# proporcional al FAN-OUT del artefacto: una spec o un plan lo leen N
 # agentes aguas abajo (deep); un diff lo lee uno (smart); un digest no
 # lo lee nadie dos veces (fast). Aquí van ALIASES, nunca IDs crudos.
 
@@ -78,7 +78,7 @@ overrides:
 # ── escalación (la aplica el comando que orquesta; ver /implement) ────
 # El implementer sube a roles.escalation cuando:
 #   · 1 veredicto fail cuyo blocking revele comprensión equivocada del
-#     problema (no un detalle mecánico) — cada ronda extra con el modelo
+#     problema (no un detalle mecánico); cada ronda extra con el modelo
 #     equivocado son 10-20 min de wall-clock
 #   · 2 veredictos fail consecutivos en la misma tarea (de cualquier tipo)
 #   · un watchdog lo mató por falta de heartbeat
