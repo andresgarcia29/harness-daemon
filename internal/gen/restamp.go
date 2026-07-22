@@ -12,9 +12,9 @@ import (
 // ArchFinding — lo que la arqueología devuelve por cluster (contrato del
 // prompt archaeology-service.md).
 type ArchFinding struct {
-	Owns       string   `json:"owns"`
-	NotOwns    string   `json:"not_owns"`
-	Invariants []string `json:"invariants"`
+	Owns         string   `json:"owns"`
+	NotOwns      string   `json:"not_owns"`
+	Invariants   []string `json:"invariants"`
 	Requirements []struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
@@ -51,6 +51,9 @@ func Restamp(ws string, a *Answers, c Cluster, f *ArchFinding, o Opts) error {
 	content, err := Render(agentDst, raw, vars)
 	if err != nil {
 		return err
+	}
+	if table := modelTableFromWS(ws); table != nil {
+		content = resolveAgentModel(content, table)
 	}
 	if err := restampWrite(ws, agentDst, content, 0o644, manifest); err != nil {
 		return err

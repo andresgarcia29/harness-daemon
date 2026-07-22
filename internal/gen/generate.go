@@ -56,6 +56,7 @@ func Generate(a *Answers, inv *Inventory, o Opts) (*Report, error) {
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
+	NormalizeModels(a) // answers pre-v0.47 traen IDs crudos; el contrato pide aliases
 	base := Vars(a, inv, o)
 	var todo []rendered
 
@@ -120,6 +121,8 @@ func Generate(a *Answers, inv *Inventory, o Opts) (*Report, error) {
 	for _, p := range paths {
 		todo = append(todo, rendered{g: GenFile{Dst: "scripts/ui/dist/" + p, Mode: 0o644}, content: distFiles[p]})
 	}
+
+	resolveModelAliases(todo) // aliases → IDs reales, en memoria (idempotente)
 
 	// ── aplicar ──
 	rep := &Report{}

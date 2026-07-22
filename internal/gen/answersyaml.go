@@ -69,6 +69,7 @@ func ParseAnswersYAML(b []byte) (*Answers, error) {
 			setKV(t, map[string]*string{"repo": &a.Instance.Repo})
 		case "models":
 			setKV(t, map[string]*string{
+				"provider":  &a.Models.Provider,
 				"architect": &a.Models.Architect, "reviewer": &a.Models.Reviewer,
 				"implementer": &a.Models.Implementer, "mechanical": &a.Models.Mechanical,
 			})
