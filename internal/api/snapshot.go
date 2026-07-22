@@ -203,7 +203,7 @@ func Build(db store.Queryer, workspaceID, wsPath string, now int64) (*Snapshot, 
 		Days: []DayCost{}, Models: []ModelCost{}, Prices: map[string]PubP{},
 		Unpriced: []string{}, Runs: loadRuns(wsPath), Connections: map[string]bool{},
 		Toolbox: BuildToolbox(wsPath), Mcp: BuildMcp(wsPath),
-		Drafts:  ListDrafts(wsPath), Law: ListLawDocs(wsPath),
+		Drafts: ListDrafts(wsPath), Law: ListLawDocs(wsPath),
 		Workspace: WsInfo{Path: wsPath}, ArchivedTasks: []string{},
 	}
 	for m, p := range prices {

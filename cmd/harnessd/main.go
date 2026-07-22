@@ -288,6 +288,7 @@ func openStore() (*store.Store, string, error) {
 //     selector de máquina muta TODA la página (tareas, sesiones, costo), no sólo
 //     las terminales. Si el VPS no responde harnessd, muestra vacío + warning
 //     (las terminales sí siguen, van por otro canal).
+//
 // remoteSnapshot arma el snapshot COMPLETO de un target por SSH. También lo
 // usa el modo setup post-instalación remota: el harness vive en el VPS y el
 // panel local lo observa proxeado, sin workspace local (ADR-0011).
@@ -887,6 +888,19 @@ func run(port int, wsPath string, setup bool) int {
 	})
 	srv := &http.Server{Handler: withAPIVersion}
 	go func() { _ = srv.Serve(ln) }()
+
+	// Sonda MCP automática: primera pasada al arrancar (con gracia para no
+	// competir con el arranque) y luego cada 30 min. El estado de los MCP se
+	// VE siempre en el panel, con su edad; el botón sigue para el "ahora".
+	go func() {
+		time.Sleep(20 * time.Second)
+		for {
+			if w := wsVal.Load(); w != nil && w.Local && w.Path != "" {
+				api.ProbeAllMcp(w.Path)
+			}
+			time.Sleep(30 * time.Minute)
+		}
+	}()
 
 	fmt.Printf("🔭 harnessd %s → http://127.0.0.1:%d\n", Version, port)
 	fmt.Printf("   máquina   %s… (%s/%s, %s)\n", m.ID[:8], m.OS, m.Arch, m.Kind)
