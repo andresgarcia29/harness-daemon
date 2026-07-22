@@ -163,8 +163,10 @@ Reglas del ledger, en orden de precedencia:
    caro medido en campo: inventarios de endpoints que ya no existían).
    Luego, en paralelo y en background: `scripts/worktree-task.sh <id>
    <repos>`, `scripts/repo-brief.sh <repo>` por repo afectado,
-   `scripts/graph-refresh.sh` (grafo al día para `graphify query`), y el
-   warmup de deps (`scripts/gowork.sh`, `scripts/py.sh`, `scripts/fe.sh`
+   `scripts/graph-refresh.sh` (grafo al día para `graphify query`), la
+   destilación de contexto si `context_distill: true`
+   (`scripts/context-distill.sh` sobre los archivos afectados; patrón MinionS: el reader lee para que el deep razone), y el warmup de
+   deps (`scripts/gowork.sh`, `scripts/py.sh`, `scripts/fe.sh`
    según stack). Cuando el implementer arranque, su mesa ya está puesta:
    serializar preparación determinista detrás de razonamiento LLM es la
    forma más tonta de perder minutos.

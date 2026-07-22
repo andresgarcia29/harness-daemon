@@ -47,10 +47,16 @@ ship: ## gates + push: make ship TASK=<id> REPO=<repo>
 watch: ## vigila el deploy: make watch TASK=<id> REPO=<repo>
 	@bash scripts/with-secrets.sh bash scripts/deploy-watch.sh $(TASK) $(REPO)
 
-usage: ## costo por sesión/tarea (ccusage — la báscula oficial)
+usage: ## costo por sesión/tarea (ccusage, la báscula oficial)
 	@ccusage
 
-ui: ## panel oficial (harness ui · 7180): agentes, fases, tokens, terminales, otras máquinas — solo lectura, solo 127.0.0.1
+ui: ## panel oficial en primer plano (127.0.0.1:7180; PORT=n cambia el puerto): agentes, fases, tokens, terminales
 	@harness ui $(if $(PORT),--port $(PORT))
 
-.PHONY: help init doctor secrets wt wt-rm gowork py fe ship watch usage ui
+ui-bg: ## panel en background (para VPS/ssh): arranca el daemon y sale; make ui-stop lo baja
+	@harness ui -d $(if $(PORT),--port $(PORT)) && echo "→ panel en http://127.0.0.1:$(if $(PORT),$(PORT),7180)"
+
+ui-stop: ## baja el daemon del panel
+	@fuser -k $(if $(PORT),$(PORT),7180)/tcp 2>/dev/null && echo "panel detenido" || echo "no había panel corriendo"
+
+.PHONY: help init doctor secrets wt wt-rm gowork py fe ship watch usage ui ui-bg ui-stop

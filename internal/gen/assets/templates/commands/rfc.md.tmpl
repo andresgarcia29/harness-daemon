@@ -13,6 +13,14 @@ tasks/$ARGUMENTS/task.md).
    `scripts/repo-brief.sh <repo>` por repo, `scripts/graph-refresh.sh`
    (grafo al día para las queries del architect) y warmup de deps —
    para que los implementers arranquen con la mesa puesta.
+1c. **Destilación de contexto (SOLO si `context_distill: true` en
+   harness-answers.yaml — patrón MinionS; docs/harness/minions-context-distill.md)**: antes de lanzar al
+   architect, corre `scripts/context-distill.sh <task> rfc "<qué necesita
+   decidir el RFC>" <archivos afectados y specs>` (idealmente en el
+   prefetch). El architect razona sobre `tasks/<id>/context/rfc.md` (citado,
+   con sus fuentes crudas), no sobre el volcado: sus tokens caros van a
+   juicio, no a lectura. Si la bandera está off, el architect lee como
+   siempre.
 2. **Lanza al agente `architect`** para redactar la propuesta RFC:
    scope, repos, cambios de contrato (diffs de proto), riesgos, y el
    **delta-spec**: contra las specs maestras (`specs/<capability>/`),
