@@ -1,5 +1,5 @@
 {
-  "installer_commit": "d2cc340e21732b134a30d7e893547691eccde09c",
+  "installer_commit": "eccec7d993acb9a29e7dc3f35c45c2df6f97f8dd",
   "files": {
     "catalog/capabilities.json": "8ffda296f8016a12a3dd2c4bfbd56aba57089a763ba9dfae003e1c4e24d326f3",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
@@ -57,7 +57,7 @@
     "templates/hooks/track-read.sh": "1730f3e62b12de8e00125dbaa5a6d517ac8ed455f4bc93f342b092b885586271",
     "templates/hooks/ui-emit.sh": "fe84fbfb269f3b63cbdfc66f907b88427bd06aab7d0ac3f5bbb7adfa2cb9ce37",
     "templates/manifest.yaml.tmpl": "a1c36f053c5d6c14fb48dad1053fc397a0008c88edeed6d0437405d058a2d9fe",
-    "templates/models.yaml.tmpl": "269c52bff06789bc6185186b6be033b740bd4b2c8da8ef08a9b4ba0ea035514a",
+    "templates/models.yaml.tmpl": "9fe84782c753c0b6dfeb258e8c635c9afeffa28eb9b175056814d743c4d13e72",
     "templates/policy.json": "8cd94d225e3a353cbdecf700bd4bf3f5d3d35310c7830f66507d21439d43a500",
     "templates/scripts/bootstrap.sh.tmpl": "3193b36bcad6d637e1ed7c1f92e2adf9ec5213e4c63b93a77312b1164e017c36",
     "templates/scripts/build-slot.sh": "7d7f22344d6ec0c7846ff1a22d5be0f653ff770ecfcf111f4843749d8078b641",
