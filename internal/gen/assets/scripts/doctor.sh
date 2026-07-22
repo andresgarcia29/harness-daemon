@@ -221,7 +221,11 @@ if [ -d "$WS/repos" ]; then
     [ -d "$r/.git" ] || continue
     total_r=$((total_r+1))
     fh="$r/.git/FETCH_HEAD"
-    if [ ! -f "$fh" ] || [ $(( now_s - $(stat -f %m "$fh" 2>/dev/null || stat -c %Y "$fh" 2>/dev/null || echo 0) )) -gt 172800 ]; then
+    # stat: GNU (-c %Y) PRIMERO; en BSD falla y cae a -f %m. Al revés NO:
+    # en GNU, -f %m "funciona" (imprime el mount point) y rompe la aritmética.
+    fetch_s="$(stat -c %Y "$fh" 2>/dev/null || stat -f %m "$fh" 2>/dev/null || echo 0)"
+    case "$fetch_s" in *[!0-9]*) fetch_s=0 ;; esac
+    if [ ! -f "$fh" ] || [ $(( now_s - fetch_s )) -gt 172800 ]; then
       old_fetch=$((old_fetch+1))
     fi
   done

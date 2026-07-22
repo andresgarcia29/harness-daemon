@@ -1,11 +1,11 @@
 {
-  "installer_commit": "0ca964cd59918639c0616a50c375dfca4867d2f2",
+  "installer_commit": "ee9ed1219777efa7c1bfc3979c0efbe921634013",
   "files": {
     "catalog/capabilities.json": "8ffda296f8016a12a3dd2c4bfbd56aba57089a763ba9dfae003e1c4e24d326f3",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
     "prompts/discovery-enrichment.md": "e613f81e31e9ef128cb0968eacfee741a340377b6c0ca3912ff52cda08fe3b4a",
     "scripts/discover.sh": "6696790ae0bd66663e1814ea3c5807288fbee8da446bf8e381d29c5e032ac9ea",
-    "scripts/doctor.sh": "571fa497f67a4c08f2e8998283d8df4fd1f720d9fb8f639ba2beab4454610280",
+    "scripts/doctor.sh": "f1c0532f50507236cc44e47f8837053b6d06f266c216844f792b9c07acabb1d9",
     "templates/AGENTS.md.tmpl": "0f8eded0b1262f4acf12fb606c8bf00e88d1bac1cfb965244ba4946a8f31dd0f",
     "templates/CLAUDE.md.tmpl": "2e564d388dfa481571a8d1658073b120ef75a23a58adcb4f9de3749ad80b62d4",
     "templates/Makefile.tmpl": "adbf7f5ca56bd40c2696411935db3556d2b24f3ad8135b8359d5565950db14b3",
