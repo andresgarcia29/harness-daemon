@@ -39,8 +39,10 @@ cara al usuario? sí → e2e (uno, no cinco variantes).
    herramientas del entorno: stubéalas en PATH o restringe PATH a un
    directorio mínimo. La lección con cicatriz: el sh de ubuntu es dash
    (no tolera bashisms), /tmp es plano (rutas ../.. resuelven distinto)
-   y no hay homebrew. "Pasa local" no es evidencia; "pasa con el
-   entorno del CI simulado" sí.
+   y no hay homebrew. Y al revés en tu terminal: la sesión es zsh pero
+   los gates son bash: reproducirlos en zsh da resultados falsos (word
+   splitting distinto); siempre `bash -c`. "Pasa local" no es
+   evidencia; "pasa con el entorno del CI simulado" sí.
 
 ## Qué audita cada quien
 

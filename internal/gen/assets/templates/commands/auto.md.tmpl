@@ -49,6 +49,10 @@ del trabajo y no habrá aclaraciones. Entonces:
      supuesto.
    - **Fuera de scope**: la interpretación más CHICA que satisface el
      prompt. Ante duda de alcance, siempre la menor.
+   - **Briefs de explorador** (si lanzas agentes a investigar): preguntas
+     NUMERADAS y específicas, jamás "explora X"; y exige "marca
+     explícitamente lo que NO existe". Medido en campo: así vienen densos
+     y accionables; genéricos vienen difusos.
    - **Repos afectados**: `inventory.json` y el grafo (`graphify
      query`). No grepees a mano.
 3. Tareas `origin: prompt` NO crean ticket en el tracker: viven en
@@ -68,7 +72,10 @@ al blast radius, no al revés. Clasifica con señales DETERMINISTAS
 | **standard** | 2-3 repos · un solo dominio, o dominios NO cruzados · sin breaking | RFC con architect, SIN abogados (no hay frontera que defender) |
 | **full** | cruza ownership · contrato breaking · servicio nuevo · migración de datos | El pipeline completo con abogados |
 
-- En duda entre dos carriles: el MAYOR. Escalar después es barato;
+- En duda entre dos carriles: PRIMERO resuélvela con evidencia
+  (inventory.json y el grafo: ¿los archivos que tocarás cruzan frontera
+  de verdad?); solo si la evidencia no decide, el MAYOR. La prudencia
+  refleja compra latencia sin comprar seguridad. Escalar después es barato;
   la clasificación es una propuesta que `ship.sh` verifica (`gate_lane`:
   un express cuyo diff toque contratos/migraciones NO pasa).
 - Registra el carril y su evidencia como primera línea del ledger.
@@ -150,13 +157,15 @@ Reglas del ledger, en orden de precedencia:
 
 ## El flujo
 
-0. **Prefetch (en cuanto sepas los repos — $0 tokens, en background)**:
-   mientras redactas el intake/plan o corre el RFC, lanza en paralelo
-   `scripts/worktree-task.sh <id> <repos>`, `scripts/repo-brief.sh <repo>`
-   por repo afectado, `scripts/graph-refresh.sh` (para que `graphify
-   query` responda con el grafo AL DÍA, no con uno podrido), y el warmup
-   de deps (`scripts/gowork.sh`, `scripts/py.sh`, `scripts/fe.sh` según
-   stack). Cuando el implementer arranque, su mesa ya está puesta:
+0. **Prefetch (en cuanto sepas los repos — $0 tokens)**:
+   PRIMERO y antes de cualquier exploración: `scripts/pull-all.sh`
+   (clones frescos; explorar un clon 27 commits atrás fue el error más
+   caro medido en campo: inventarios de endpoints que ya no existían).
+   Luego, en paralelo y en background: `scripts/worktree-task.sh <id>
+   <repos>`, `scripts/repo-brief.sh <repo>` por repo afectado,
+   `scripts/graph-refresh.sh` (grafo al día para `graphify query`), y el
+   warmup de deps (`scripts/gowork.sh`, `scripts/py.sh`, `scripts/fe.sh`
+   según stack). Cuando el implementer arranque, su mesa ya está puesta:
    serializar preparación determinista detrás de razonamiento LLM es la
    forma más tonta de perder minutos.
 1. **Intake**. Valida task.md contra `docs/harness/intake.md`. Rebotar

@@ -206,51 +206,124 @@ run_security_gates() {
 
 # gate_tests_untouched — el gate confía en el test suite; el test suite es un
 # archivo que el agente puede editar. Sin este gate, la forma MÁS BARATA de
-# pasar a verde no es arreglar el código: es debilitar el test. Está medido —
-# en SWE-bench+, el 31% de los parches "exitosos" pasaban por tests débiles, y
-# los harnesses que solo piden "no borres tests" en prosa lo piden porque no
-# tienen gate. Aquí los tests son el CONTRATO: cambiar uno exige delta-spec.
+# pasar a verde no es arreglar el código: es debilitar el test (SWE-Bench+:
+# ~31% de parches "exitosos" pasaban por tests débiles).
 #
-# La cuarentena de flake-warden NO es una puerta trasera de este gate: los
-# cronjobs jamás llaman a ship.sh — abren un PR que un humano revisa. Esa es la
-# excepción privilegiada, y es explícita. Si algún día alguien enruta un cronjob
-# por aquí, este gate lo bloqueará, y hará bien: un skip que nadie miró es
-# exactamente lo que este gate existe para impedir.
+# v2, con las lecciones de campo: (1) cuenta LLAMADAS reales de aserción
+# (una línea de import con la palabra expect o un comentario con asserted ya
+# no cuentan); (2) contabilidad NETA por archivo: una línea MOVIDA aparece en
+# el lado - y en el +, neto 0; un move entre archivos de test (suma global
+# <= 0, sin skips ni borrados) pasa con aviso; (3) el escape exige DECLARAR:
+# el delta-spec debe nombrar CADA archivo debilitado DENTRO de una sección
+# MODIFIED/REMOVED (escribir la palabra en la prosa ya no abre nada).
+#
+# Residuales conscientes (rúbrica del reviewer, no de este gate): borrar
+# filas de una tabla Go table-driven, y reemplazos tautológicos
+# (expect(true).toBe(true)). -M explícito en TODOS los git diff: sin él, un
+# rename cuenta como D+A según la config diff.renames del usuario.
 gate_tests_untouched() {
   gate "tests no debilitados"
   local pat="${TEST_PATH_PATTERN:-(test|spec|Test|_test\.|\.test\.|\.spec\.|/tests?/|/spec/)}"
   local touched
-  touched="$(git diff origin/main..HEAD --name-only | grep -E "$pat" || true)"
+  touched="$(git diff -M origin/main..HEAD --name-status \
+    | awk -F'\t' '{ for (i = 2; i <= NF; i++) print $i }' | grep -E "$pat" | sort -u || true)"
   [ -n "$touched" ] || return 0
 
-  # Señales de debilitamiento: borrar el archivo, o quitar/saltar aserciones.
-  local deleted weakened
-  deleted="$(git diff origin/main..HEAD --diff-filter=D --name-only | grep -E "$pat" || true)"
-  weakened="$(git diff origin/main..HEAD -- $(printf '%s ' $touched) 2>/dev/null \
-    | grep -E '^-' | grep -vE '^---' \
-    | grep -cE '(assert|expect|require\.|should|t\.Error|@Test|it\(|test\(|describe\()' || true)"
-  local skipped
-  skipped="$(git diff origin/main..HEAD -- $(printf '%s ' $touched) 2>/dev/null \
-    | grep -E '^\+' | grep -cE '(@skip|\.skip\(|xit\(|xdescribe\(|t\.Skip\(|pytest\.mark\.skip|#\[ignore\])' || true)"
+  local deleted
+  deleted="$(git diff -M origin/main..HEAD --diff-filter=D --name-only | grep -E "$pat" || true)"
 
-  if [ -n "$deleted" ] || [ "${weakened:-0}" -gt 0 ] || [ "${skipped:-0}" -gt 0 ]; then
-    # La excepción legítima existe: si el RFC declaró el cambio de comportamiento
-    # en el delta-spec, tocar el test NO es hacer trampa — es cumplir la spec.
-    local delta="$WS/tasks/$TASK/delta-spec.md"
-    if [ -f "$delta" ] && grep -qiE '(REMOVED|MODIFIED)' "$delta"; then
-      echo "⚠️  tests tocados, pero el delta-spec declara REMOVED/MODIFIED — permitido (queda en el registro)"
-      return 0
-    fi
-    echo "❌ este cambio DEBILITA tests y ningún delta-spec lo declara:"
-    [ -n "$deleted" ] && echo "   · borrados: $deleted"
-    [ "${weakened:-0}" -gt 0 ] && echo "   · $weakened aserciones eliminadas"
-    [ "${skipped:-0}" -gt 0 ] && echo "   · $skipped skips/ignores añadidos"
-    echo "   ↳ remediación: los tests son el CONTRATO, no el obstáculo. Si el"
-    echo "     comportamiento DEBE cambiar, eso es un RFC: declara el cambio en"
-    echo "     tasks/$TASK/delta-spec.md como MODIFIED/REMOVED y re-corre. Si no,"
-    echo "     arregla el CÓDIGO hasta que el test pase como está."
-    exit 3
+  # UN pase del diff completo en awk (BSD-safe: sin \b ni \s; gsub cuenta
+  # OCURRENCIAS, no líneas). Salida: "<aserciones_netas>\t<skips_netos>\t<archivo>".
+  local report
+  report="$(git diff -M origin/main..HEAD | TESTPAT="$pat" awk '
+    BEGIN {
+      pat  = ENVIRON["TESTPAT"]
+      asrt = "assert[A-Za-z_]*[[:space:]]*\\(|assert\\.[A-Za-z_]+[[:space:]]*\\(" \
+           "|(^|[^A-Za-z0-9_])assert[[:space:]]+[^=[:space:]]" \
+           "|expect[[:space:]]*\\(|require\\.[A-Za-z]+\\(" \
+           "|t\\.(Error|Fatal|FailNow|Run)|\\.should\\.|@Test" \
+           "|(^|[^A-Za-z0-9_.])(it|test|describe)[[:space:]]*\\("
+      skp  = "(^|[^A-Za-z0-9_.])(xit|xdescribe|xtest)[[:space:]]*\\(" \
+           "|\\.skip[[:space:]]*\\(|\\.only[[:space:]]*\\(|@skip|@unittest\\.skip" \
+           "|pytest\\.mark\\.skip|t\\.Skip|#\\[ignore\\]|@Disabled|@Ignore"
+      cmnt = "^(//|/\\*|\\*|#[^[]|import[[:space:]]|from[[:space:]])"
+    }
+    function flush() {
+      if (cur != "" && cur ~ pat && (na != 0 || ns != 0))
+        printf "%d\t%d\t%s\n", na, ns, cur
+      cur = ""; na = 0; ns = 0
+    }
+    /^diff --git / { flush(); minus = ""; next }
+    /^--- /   { minus = $0; sub(/^--- /, "", minus)
+                gsub(/^"|"$/, "", minus); sub(/^a\//, "", minus); next }
+    /^\+\+\+ / { cur = $0; sub(/^\+\+\+ /, "", cur)
+                gsub(/^"|"$/, "", cur); sub(/^b\//, "", cur)
+                if (cur == "/dev/null") cur = minus; next }
+    /^-/ { l = substr($0, 2); sub(/^[[:space:]]+/, "", l)
+           if (l ~ cmnt) next
+           if (l ~ skp) ns -= 1
+           na += gsub(asrt, "", l); next }
+    /^\+/ { l = substr($0, 2); sub(/^[[:space:]]+/, "", l)
+            if (l ~ cmnt) next
+            if (l ~ skp) ns += 1
+            na -= gsub(asrt, "", l); next }
+    END { flush() }
+  ')"
+
+  # La declaración legítima: contenido BAJO encabezados MODIFIED/REMOVED del
+  # delta-spec, y debe nombrar el basename de CADA archivo debilitado.
+  local delta="$WS/tasks/$TASK/delta-spec.md" declared=""
+  [ -f "$delta" ] && declared="$(awk '
+    /^#/ { insec = (toupper($0) ~ /(MODIFIED|REMOVED)/); next }
+    insec { print }
+  ' "$delta")"
+  declares() { printf '%s\n' "$declared" | grep -qiF "$(basename "$1")"; }
+
+  local bad=0 global_na=0 f na ns
+  if [ -n "$deleted" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if declares "$f"; then
+        echo "   ⚠️  test borrado y DECLARADO en el delta-spec: $f (queda en el registro)"
+      else
+        echo "   · test BORRADO sin declarar: $f"
+        bad=1
+      fi
+    done <<DELEOF
+$deleted
+DELEOF
   fi
+  if [ -n "$report" ]; then
+    while IFS="$(printf '\t')" read -r na ns f; do
+      [ -n "$f" ] || continue
+      global_na=$((global_na+na))
+      [ "$na" -gt 0 ] || [ "$ns" -gt 0 ] || continue
+      if declares "$f"; then
+        echo "   ⚠️  tests tocados y DECLARADOS en el delta-spec: $f"
+        continue
+      fi
+      [ "$na" -gt 0 ] && echo "   · $f: $na aserciones netas eliminadas"
+      [ "$ns" -gt 0 ] && echo "   · $f: $ns skips/only netos añadidos"
+      bad=1
+    done <<REPEOF
+$report
+REPEOF
+    # move entre archivos de test: neto por archivo != 0 pero global <= 0 y
+    # sin skips ni borrados: reorganizar suites es legítimo, no debilitar
+    if [ "$bad" -eq 1 ] && [ "$global_na" -le 0 ] && [ -z "$deleted" ] \
+       && ! printf '%s\n' "$report" | awk -F'\t' '$2 > 0 { found=1 } END { exit !found }'; then
+      echo "   ⚠️  aserciones movidas ENTRE archivos de test (neto global $global_na): no es debilitamiento"
+      bad=0
+    fi
+  fi
+  [ "$bad" -eq 0 ] && return 0
+  echo "❌ este cambio DEBILITA tests y el delta-spec no lo declara (archivos arriba):"
+  echo "   ↳ remediación: los tests son el CONTRATO, no el obstáculo. Si el"
+  echo "     comportamiento DEBE cambiar, decláralo en tasks/$TASK/delta-spec.md:"
+  echo "     bajo '## MODIFIED Requirements' o '## REMOVED Requirements' la entrada"
+  echo "     debe NOMBRAR cada archivo de test afectado. Si no, arregla el CÓDIGO"
+  echo "     hasta que el test pase como está."
+  exit 3
 }
 
 # gate_evidence — nuestra ley es "los agentes proponen, los sistemas
