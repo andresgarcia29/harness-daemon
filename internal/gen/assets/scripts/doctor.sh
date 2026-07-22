@@ -39,7 +39,7 @@ if [ -f "$WS/manifest.yaml" ] && [ -d "$WS/repos" ]; then
 fi
 
 # 2 · Scripts de instancia ejecutables
-for s in ship.sh worktree-task.sh; do
+for s in ship.sh worktree-task.sh quiet.sh with-secrets.sh emit.sh          build-slot.sh gowork.sh py.sh fe.sh repo-brief.sh          stamp-models.sh graph-refresh.sh pull-all.sh skills-sync.sh          verdict-scaffold.sh; do
   if [ -f "$WS/scripts/$s" ]; then
     [ -x "$WS/scripts/$s" ] && ok "scripts/$s ejecutable" || fail "scripts/$s no ejecutable" "chmod +x scripts/$s"
     bash -n "$WS/scripts/$s" 2>/dev/null && ok "scripts/$s sintaxis válida" || fail "scripts/$s con error de sintaxis" "revisa el archivo (bash -n scripts/$s)"
@@ -204,6 +204,32 @@ done
 drafts=$(grep -l "status: DRAFT" "$WS"/.claude/agents/*.md "$WS"/docs/constitution.md "$WS"/specs/*/spec.md 2>/dev/null | wc -l | tr -d ' ')
 [ "$drafts" -gt 0 ] && warn "$drafts documentos en DRAFT (constituciones/constitution/specs) — ratificar antes del primer RFC"
 
+for p in harness-policy.py evidence.py; do
+  if [ -f "$WS/scripts/$p" ]; then
+    python3 -m py_compile "$WS/scripts/$p" 2>/dev/null && ok "scripts/$p compila" || fail "scripts/$p con error de sintaxis" "revisa el archivo (python3 -m py_compile scripts/$p)"
+  else
+    fail "scripts/$p faltante" "corre el update de la instancia (harness update o /harness-init .)"
+  fi
+done
+
+# Frescura de clones: explorar un clon podrido fue el error más caro medido
+# en campo (27 commits atrás = inventarios de endpoints inexistentes).
+if [ -d "$WS/repos" ]; then
+  old_fetch=0; total_r=0
+  now_s=$(date +%s)
+  for r in "$WS"/repos/*/; do
+    [ -d "$r/.git" ] || continue
+    total_r=$((total_r+1))
+    fh="$r/.git/FETCH_HEAD"
+    if [ ! -f "$fh" ] || [ $(( now_s - $(stat -f %m "$fh" 2>/dev/null || stat -c %Y "$fh" 2>/dev/null || echo 0) )) -gt 172800 ]; then
+      old_fetch=$((old_fetch+1))
+    fi
+  done
+  if [ "$total_r" -gt 0 ] && [ $((old_fetch * 2)) -gt "$total_r" ]; then
+    warn "clones posiblemente podridos: $old_fetch/$total_r sin fetch en 48h — corre make pull antes de explorar"
+  fi
+fi
+
 # 10 · Capa SDD y modelos
 [ -f "$WS/docs/constitution.md" ] && ok "constitution.md presente" || warn "sin docs/constitution.md — los agentes no tienen tie-breaker"
 [ -f "$WS/models.yaml" ] && ok "models.yaml presente" || warn "sin models.yaml — sin política de ruteo/escalación de modelos"
@@ -212,6 +238,13 @@ if [ -x "$WS/scripts/stamp-models.sh" ] && [ -f "$WS/models.yaml" ]; then
     ok "agentes alineados con models.yaml (provider + aliases)"
   else
     fail "frontmatter de agentes desalineado con models.yaml" "make models (re-estampa desde la política)"
+  fi
+fi
+if [ -f "$WS/skills.yaml" ] && [ -x "$WS/scripts/skills-sync.sh" ]; then
+  if bash "$WS/scripts/skills-sync.sh" --check >/dev/null 2>&1; then
+    ok "capa compartida de skills en sync (skills.yaml)"
+  else
+    warn "skills compartidas con drift o fuente inaccesible; corre: make skills"
   fi
 fi
 [ -f "$WS/AGENTS.md" ] && ok "AGENTS.md presente (mapa multi-herramienta)" || warn "sin AGENTS.md — Cursor/Kimi/otros agentes no tienen punto de entrada"

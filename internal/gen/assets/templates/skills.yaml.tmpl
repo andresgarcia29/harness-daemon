@@ -1,0 +1,17 @@
+# skills.yaml: la capa COMPARTIDA de skills de este workspace.
+#
+# Tres capas, tres dueños (la procedencia es verificable, ver
+# docs de skill-creator):
+#   upstream    las trae el plugin (harness update las renueva)
+#   compartida  las declaras AQUÍ; viven en TUS repos y las instala
+#               `make skills` (scripts/skills-sync.sh) con marca .managed
+#   local       .claude/skills/<nombre>/ sin marca: nadie las pisa
+#
+# FORMATO ESTRICTO (lo parsea awk, como models.yaml): bajo `sources:`,
+# una línea por fuente:
+#   - <repo-git> <skill|all> [ref]
+# Ejemplos:
+#   - git@github.com:{{GITHUB_ORG}}/{{PROJECT_SLUG}}-skills.git all main
+#   - git@github.com:mi-org/skills-comunes.git deploy-canary
+
+sources:
