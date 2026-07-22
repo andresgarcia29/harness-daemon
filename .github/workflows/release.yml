@@ -1,7 +1,7 @@
 # Release: tag v* → binarios 4 plataformas → release público → formula al tap.
 # Secrets requeridos:
-#   INSTALLER_TOKEN — lee andresgarcia29/harness-creator (privado)
-#   TAP_TOKEN       — escribe andresgarcia29/homebrew-agm
+#   TAP_TOKEN — escribe andresgarcia29/homebrew-agm
+# (harness-creator es público: su checkout ya no necesita token)
 name: release
 on:
   push:
@@ -35,7 +35,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: andresgarcia29/harness-creator
-          token: ${{ secrets.INSTALLER_TOKEN }}
           path: harness-installer
       - uses: actions/setup-go@v5
         with:
