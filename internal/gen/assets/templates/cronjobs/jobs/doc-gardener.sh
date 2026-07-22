@@ -7,6 +7,10 @@ JOB_TOOLS="Read,Grep,Glob,Bash(git *),Bash(gh *),Bash(d2 *),Bash(lychee *),Edit,
 
 detect() {
   : > "$FINDINGS"
+  # 0) ley de estilo (constitución 5b): el guion largo "—" delata texto de
+  #    IA y está prohibido en docs/specs. El jardinero lo reescribe.
+  grep -rn "—" docs/ specs/ README.md 2>/dev/null | head -20 \
+    | sed 's/^/em-dash-prohibido: /' >> "$FINDINGS" || true
   # 1) links rotos (lychee si existe; fallback: paths internos)
   if command -v lychee >/dev/null; then
     lychee --offline --no-progress docs/ CLAUDE.md 2>/dev/null | grep -E "✗|ERROR" | sed 's/^/link-roto: /' >> "$FINDINGS" || true
