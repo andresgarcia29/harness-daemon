@@ -1,0 +1,38 @@
+# Auto-sync de assets: la cascada creator→daemon deja de perseguirse a mano.
+# Cada merge en harness-creator invalida los assets embebidos (el check de
+# drift del CI lo detecta); este workflow abre el PR de sync solo.
+name: sync-assets
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: andresgarcia29/harness-creator
+          path: harness-installer
+      - name: sync + PR si hay drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/sync-assets.sh ./harness-installer
+          if git diff --quiet; then echo "sin drift"; exit 0; fi
+          sha="$(git -C harness-installer rev-parse --short HEAD)"
+          branch="bot/sync-assets-$sha"
+          git config user.name "sync-assets[bot]"
+          git config user.email "actions@github.com"
+          git checkout -b "$branch"
+          git add -A internal/
+          git commit -m "chore: sync assets del installer @ $sha (auto)"
+          git push -u origin "$branch"
+          gh pr create --title "chore: sync assets @ $sha (auto)" \
+            --body "Drift detectado contra harness-creator main. PR automático; el CI de este repo lo valida."

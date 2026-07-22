@@ -33,6 +33,14 @@ cara al usuario? sí → e2e (uno, no cinco variantes).
    constitución §4).
 6. **Flaky = cuarentena, no reintento infinito.** El flake-warden lo
    detecta; un test en cuarentena tiene issue con dueño y fecha.
+7. **Herméticos contra el inventario del host.** Un test que depende de
+   qué binarios tenga la máquina (docker, homebrew, bd) pasa de chiripa
+   en tu laptop y revienta en CI, o al revés. Si el código consulta
+   herramientas del entorno: stubéalas en PATH o restringe PATH a un
+   directorio mínimo. La lección con cicatriz: el sh de ubuntu es dash
+   (no tolera bashisms), /tmp es plano (rutas ../.. resuelven distinto)
+   y no hay homebrew. "Pasa local" no es evidencia; "pasa con el
+   entorno del CI simulado" sí.
 
 ## Qué audita cada quien
 

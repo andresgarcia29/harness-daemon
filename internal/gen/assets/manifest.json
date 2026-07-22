@@ -1,5 +1,5 @@
 {
-  "installer_commit": "f0f7eb214955ff40b9707d72f5aded0804143cbc",
+  "installer_commit": "c3b1e878f28996b5b6c6cefe65602863d70f2ade",
   "files": {
     "catalog/capabilities.json": "8ffda296f8016a12a3dd2c4bfbd56aba57089a763ba9dfae003e1c4e24d326f3",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
@@ -24,7 +24,7 @@
     "templates/commands/rfc.md.tmpl": "3fb0494b278db5e78e2f4cadb11bbe1797a8c4447dd70a3d5723440778faff53",
     "templates/commands/ship.md.tmpl": "d3fa5f7f95458989ec5baff79114fc410e73bf1aebef4ea99e633c1fc62b0c1e",
     "templates/cronjobs/cron-runner.sh": "1b10d9b33ea0391b6d86fed5cb807a3f43e65579b5c915ddd6143b9f8f8d5382",
-    "templates/cronjobs/jobs/ci-doctor.sh": "6fe6507fdd0240240239534afcb9ffbc1f8ce9f13ec9fdba584d248200f5da57",
+    "templates/cronjobs/jobs/ci-doctor.sh": "0abb50f8f9d2a920eeb116bcbb7cf74dbc719266f3d907ff8d1857a9838c0711",
     "templates/cronjobs/jobs/daily-digest.sh": "8e054b1da9be69f94fd0ce988521fa323aac8af047013f76e379fc39ac536717",
     "templates/cronjobs/jobs/dead-code-reaper.sh": "391bca272810a1396d6caf634ff04fe38488f3a3d98d9a072c3c53779c02b478",
     "templates/cronjobs/jobs/dep-shepherd.sh": "2b14d22258442710bcafeeb64f571f3f9d99739595185aafe9b38bbe9204df57",
@@ -49,7 +49,7 @@
     "templates/docs/policy.md": "9b92ae7f11a3879b13ac9427e811f1091d65568ded60cd76e89b1904f2d5d6a5",
     "templates/docs/quality.md.tmpl": "5045a6412e41b4017232063b352faa6323b92ba65791e3fd64c4bb31af7d73e6",
     "templates/docs/spec.md.tmpl": "ff5c6538c63a5b78e142978caff29e8c4f7bebe9ee9552c84d21c78275e4a72a",
-    "templates/docs/testing-policy.md.tmpl": "62cf0f472afed4b186fc21aa4ec4a4c56db843cfa41ca2d85509deb742b31690",
+    "templates/docs/testing-policy.md.tmpl": "35c6a78a5f200ab4885348cd1e36626344710569086f68e6c479b0bc2937e0f8",
     "templates/harness-answers.yaml.tmpl": "c0cfd088cfa3ff4125601e148a900d1d87ab4903f3f3a430e739ff5c0760a809",
     "templates/hooks/block-direct-push.sh": "e989df59ac69d1262fc3b6401507da272014a922efd3f0b76d3f4582b7782b47",
     "templates/hooks/guard-build-slot.sh": "6bf5f6b5ab27ac83122e5990000602f0e03b2d0d467a909dfc620b29c5b62bf2",
