@@ -46,22 +46,22 @@ type CapConfig struct {
 	Args    []string `json:"args"`
 }
 type Capability struct {
-	Name           string     `json:"name"`
-	Category       string     `json:"category"`
-	Purpose        string     `json:"purpose"`
-	Provider       string     `json:"provider"` // cli | mcp | script
-	Bin            string     `json:"bin,omitempty"`
-	Mcp            string     `json:"mcp,omitempty"`
-	Config         *CapConfig `json:"config,omitempty"`
-	Wrap           bool       `json:"wrap,omitempty"`
-	Install        string     `json:"install,omitempty"`
-	PermissionTier string     `json:"permission_tier,omitempty"`
-	Profiles       []string   `json:"profiles,omitempty"`
-	Detect         string     `json:"detect,omitempty"`
+	Name           string      `json:"name"`
+	Category       string      `json:"category"`
+	Purpose        string      `json:"purpose"`
+	Provider       string      `json:"provider"` // cli | mcp | script
+	Bin            string      `json:"bin,omitempty"`
+	Mcp            string      `json:"mcp,omitempty"`
+	Config         *CapConfig  `json:"config,omitempty"`
+	Wrap           bool        `json:"wrap,omitempty"`
+	Install        string      `json:"install,omitempty"`
+	PermissionTier string      `json:"permission_tier,omitempty"`
+	Profiles       []string    `json:"profiles,omitempty"`
+	Detect         string      `json:"detect,omitempty"`
 	Secrets        []SecretRef `json:"secrets,omitempty"`
-	Phase          int        `json:"phase,omitempty"`
-	Cronjob        string     `json:"cronjob,omitempty"`
-	Note           string     `json:"note,omitempty"`
+	Phase          int         `json:"phase,omitempty"`
+	Cronjob        string      `json:"cronjob,omitempty"`
+	Note           string      `json:"note,omitempty"`
 }
 
 var (
