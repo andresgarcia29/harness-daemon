@@ -44,7 +44,10 @@ Sesión de Claude Code en esta carpeta. El día a día es UNA línea:
 ```
 
 `/auto` corre el pipeline entero sin preguntarte: intake → RFC →
-implement → review → ship → deploy → archive. Resuelve la ambigüedad con
+implement → review → ship → deploy → archive — **dimensionado al blast
+radius**: una tarea de 1 repo sin contratos va por el carril express
+(salta el RFC; 2 sesiones LLM) y `gate_lane` en ship.sh verifica que el
+diff cumpla la promesa del carril. Resuelve la ambigüedad con
 evidencia y te deja el rastro en `tasks/<id>/assumptions.md` — léelo:
 son las decisiones que se tomaron por ti. Solo para donde una ley del
 harness lo exige (ver `docs/harness/pipeline.md`).
@@ -52,6 +55,17 @@ harness lo exige (ver `docs/harness/pipeline.md`).
 Si quieres conducir fase por fase, los comandos sueltos siguen ahí:
 `/feature <ticket>` → `/rfc` → `/implement` → `/review` → `/ship` →
 `/archive`. Reglas de entrada de tickets: `docs/harness/intake.md`.
+
+**Modelos**: `models.yaml` es la única perilla — aliases `fast|smart|deep`,
+rol→alias, overrides por agente y el proveedor (anthropic/vertex/bedrock/
+kimi/openrouter). Cambias una línea y corres `make models`. Para una sola
+tarea: `/auto <id> --model deep`.
+
+**¿Otra herramienta además de Claude Code?** `AGENTS.md` es el punto de
+entrada estándar (Cursor, Kimi Code, Codex…): mismas leyes, y los comandos
+de `.claude/commands/` son playbooks markdown que cualquier agente puede
+seguir. Ojo: los hooks que frenan el push directo solo corren en Claude
+Code — pon branch protection en `main` como red equivalente.
 
 Leyes con enforcement (hook o gate — no son sugerencias):
 push a main solo vía `scripts/ship.sh` · trabajo solo en worktrees

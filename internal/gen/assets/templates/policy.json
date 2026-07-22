@@ -12,6 +12,22 @@
       "archive": [],
       "blocked": []
     },
+    "lanes": {
+      "express": {
+        "allowed_transitions": {
+          "intake": ["implement"],
+          "implement": ["review"],
+          "review": ["implement", "ship"],
+          "ship": ["deploy"],
+          "deploy": ["archive"],
+          "archive": [],
+          "blocked": []
+        }
+      },
+      "standard": {},
+      "full": {}
+    },
+    "lane_escalation": ["express", "standard", "full"],
     "allowed_pause_reasons": [
       "draft_constitution",
       "irreversible_architecture",

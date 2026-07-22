@@ -8,7 +8,11 @@ tasks/$ARGUMENTS/task.md).
 
 1. **Determina los clusters afectados** con el task.md y
    `manifest.yaml` (campo cluster/agent por repo). En duda de fronteras
-   usa el grafo, no grep masivo.
+   usa el grafo, no grep masivo. **En cuanto conozcas los repos, lanza
+   el prefetch en background ($0 tokens)**: `scripts/worktree-task.sh`,
+   `scripts/repo-brief.sh <repo>` por repo, `scripts/graph-refresh.sh`
+   (grafo al día para las queries del architect) y warmup de deps —
+   para que los implementers arranquen con la mesa puesta.
 2. **Lanza al agente `architect`** para redactar la propuesta RFC:
    scope, repos, cambios de contrato (diffs de proto), riesgos, y el
    **delta-spec**: contra las specs maestras (`specs/<capability>/`),
@@ -16,8 +20,13 @@ tasks/$ARGUMENTS/task.md).
    EARS con escenarios Given/When/Then. El delta ES la definición
    formal del blast radius. La constitución
    (`docs/constitution.md`) arbitra cualquier empate.
-3. **Lanza EN PARALELO a los abogados** de cada cluster afectado
-   (agentes `svc-*` / clusters). Cada uno responde UNA vez, JSON fijo.
+3. **Abogados: SOLO si hay frontera cruzada.** El abogado existe para
+   defender fronteras de ownership; si todos los repos afectados caen
+   en UN dominio (carril standard), no hay litigio que valga sus tokens
+   ni sus minutos: el architect valida contra la spec del dominio y
+   `docs/architecture/map.md`, y sigues al paso 5. Si la tarea SÍ cruza
+   dominios (carril full): **lanza EN PARALELO a los abogados** de cada
+   cluster cruzado. Cada uno responde UNA vez, JSON fijo.
    ⚠️ Si alguno sigue `status: DRAFT`, PARA y pide ratificación al
    humano — la ley no ratificada no es ley.
 4. **Síntesis del arquitecto**: máx 2 rondas; conflicto irresuelto →

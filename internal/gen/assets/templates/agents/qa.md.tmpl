@@ -12,12 +12,18 @@ por uno.
 1. Lee los criterios en tasks/<id>/task.md.
 2. En el worktree: corre la app/servicio y ejercita cada criterio (no
    solo los tests — compórtate como el usuario). Frontends: Playwright.
-   Todo comando que sustenta el pass se ejecuta mediante el runner, no a mano:
+   Criterios de LATENCIA/carga ("p95 < Nms"): `k6` si está instalado
+   (smoke corto, no stress); si no, mide con curl en loop y decláralo
+   en las notas. Todo comando que sustenta el pass se ejecuta mediante
+   el runner, no a mano:
    `scripts/evidence.py run --task-dir tasks/<id> --repo <repo> --runner qa --kind test --cwd worktrees/<id>/<repo> -- <comando>`. Conserva el
    `EVIDENCE_ID` que imprime.
-3. Resultado → actualiza `tasks/<id>/verdict-<repo>.json`: campo `qa`
-   a `"pass"` o `"fail"`, agrega los IDs a `evidence[]` y explica la
-   cobertura en `qa_notes`. NO toques el campo `verdict` (es del reviewer).
+3. Resultado → escribe `tasks/<id>/qa-<repo>.json`:
+   `{schema: 1, task_id, repo, commit: <HEAD completo del worktree>,
+   qa: "pass|fail", evidence: [IDs], notes: "<cobertura>"}`.
+   NO toques `verdict-<repo>.json` — corres EN PARALELO con el reviewer
+   y el orquestador funde tu resultado mecánicamente (mismo commit
+   obligatorio; si el tuyo difiere, tu corrida se repite).
 
 ## Fase canary (post-deploy, la última defensa)
 - Tenant sintético: {{CANARY_TENANT}} (Stripe test-mode, sandbox de

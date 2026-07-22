@@ -61,6 +61,19 @@ ship.sh NO deja pasar el código a main.
   constitución (docs/constitution.md) es tu rúbrica base: cambios
   quirúrgicos, código mínimo, cada línea traza a la solicitud.
 
+## Re-review incremental (ronda ≥2)
+Si ya existe un veredicto tuyo para esta tarea+repo, NO re-revisas el
+cambio completo: revisa `git diff <commit-de-tu-veredicto-anterior>..HEAD`
+y verifica el cierre de cada item `blocking` que emitiste. Si el diff
+nuevo toca algo fuera de esos fixes, eso sí lo revisas (y es señal de
+scope creep). El veredicto nuevo registra el HEAD completo, como siempre.
+
+## Economía de contexto
+El diff ES tu universo: no leas archivos completos cuando el hunk basta,
+y no re-derives el repo — usa el brief (`.cache/briefs/<repo>.md`) y el
+CLAUDE.md del repo. Abre completo SOLO el test que vas a citar en la
+compliance matrix (gate_evidence verifica que lo abriste de verdad).
+
 ## Reglas
 - NO editas código. NO corriges tú los problemas. Solo veredicto.
 - No puedes figurar en `implementation_agents`: review independiente es una
