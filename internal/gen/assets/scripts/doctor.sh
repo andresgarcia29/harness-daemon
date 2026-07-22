@@ -215,6 +215,24 @@ if [ -x "$WS/scripts/stamp-models.sh" ] && [ -f "$WS/models.yaml" ]; then
   fi
 fi
 [ -f "$WS/AGENTS.md" ] && ok "AGENTS.md presente (mapa multi-herramienta)" || warn "sin AGENTS.md — Cursor/Kimi/otros agentes no tienen punto de entrada"
+# Integridad de hooks: TODO hook referenciado en settings.json debe existir y
+# ser ejecutable. Un hook registrado pero ausente spamea "not found" en CADA
+# tool call del agente (visto en un VPS real: el generador olvidó un archivo).
+# Intersección de conjuntos: cero opinión.
+if [ -f "$WS/.claude/settings.json" ]; then
+  while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    hp="$WS/${h#\$CLAUDE_PROJECT_DIR/}"; hp="${hp//\"/}"
+    if [ ! -f "$hp" ]; then
+      fail "hook registrado en settings.json pero AUSENTE: $h" "re-corre el update de la instancia (harness update o /harness-init .) o copia templates/hooks/$(basename "$h") del plugin"
+    elif [ ! -x "$hp" ]; then
+      fail "hook registrado pero no ejecutable: $h" "chmod +x $hp"
+    fi
+  done <<EOF
+$(jq -r '.. | .command? // empty' "$WS/.claude/settings.json" 2>/dev/null | grep -o '[^ "]*\.claude/hooks/[^ "]*\.sh' | sed "s|.*\.claude/hooks/|.claude/hooks/|" | sort -u)
+EOF
+fi
+
 # beads: TODO el pipeline de implement ordena por `bd ready --json` — si el
 # workspace no está inicializado, /auto muere en la primera consulta del DAG.
 if command -v bd >/dev/null 2>&1; then
