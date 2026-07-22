@@ -1,46 +1,107 @@
-# models.yaml — política de ruteo de modelos del harness.
-# Claude Code no trae router dinámico: el modelo se fija en (a) el
-# frontmatter `model:` de cada agente, (b) /model en la sesión, y
-# (c) --model/--effort en headless (cronjobs). Este archivo es la
-# POLÍTICA que el orquestador y /harness-update aplican a esos tres
-# lugares. Cambiar aquí → correr /harness-update para re-estampar.
+# models.yaml — LA única perilla de modelos del harness.
 #
+# Tres niveles, del más simple al más fino (nunca tocas agentes a mano):
+#   · cambiar un rol      → edita `roles:` y corre `make models`
+#   · un agente puntual   → una línea en `overrides:` y `make models`
+#   · una sola tarea      → /auto <id> --model <alias>   (o `model:` en el
+#                           frontmatter de tasks/<id>/task.md)
+#
+# TODO el harness habla en ALIASES (fast | smart | deep). El proveedor los
+# traduce a IDs reales: cambiar de proveedor es cambiar UNA línea
+# (`provider:`) — roles, overrides y comandos no se tocan.
+# `scripts/stamp-models.sh` materializa esta política en el frontmatter de
+# .claude/agents/ (determinista, $0 tokens); `make models` es su atajo.
+#
+# FORMATO ESTRICTO (lo parsea awk, sin dependencias): secciones a columna 0,
+# claves con DOS espacios de indentación, `clave: valor`. Sin anidación extra.
+
+provider: {{MODEL_PROVIDER}}   # anthropic | vertex | bedrock | kimi | openrouter
+
+# ── alias → id, por proveedor ─────────────────────────────────────────
+# anthropic usa los nombres cortos que Claude Code entiende nativo. Los
+# demás son EJEMPLOS de formato: verifica el ID exacto en el catálogo de
+# tu proveedor antes de cambiar `provider:` (los IDs de Vertex llevan
+# @fecha; los de Bedrock, prefijo de región y sufijo de versión).
+
+models.anthropic:
+  fast: haiku
+  smart: sonnet
+  deep: opus
+
+models.vertex:
+  # Claude vía Google Vertex. Claude Code: export CLAUDE_CODE_USE_VERTEX=1,
+  # ANTHROPIC_VERTEX_PROJECT_ID=<proyecto>, CLOUD_ML_REGION=<región>.
+  fast: claude-haiku-4-5@20251001
+  smart: claude-sonnet-5@20250929
+  deep: claude-opus-4-8@20260120
+
+models.bedrock:
+  # Claude vía AWS Bedrock. Claude Code: export CLAUDE_CODE_USE_BEDROCK=1.
+  fast: us.anthropic.claude-haiku-4-5-20251001-v1:0
+  smart: us.anthropic.claude-sonnet-5-20250929-v1:0
+  deep: us.anthropic.claude-opus-4-8-20260120-v1:0
+
+models.kimi:
+  # Kimi Code / Moonshot (API compatible con Anthropic).
+  fast: kimi-k2-turbo
+  smart: kimi-k2
+  deep: kimi-k2-thinking
+
+models.openrouter:
+  fast: anthropic/claude-haiku-4.5
+  smart: anthropic/claude-sonnet-5
+  deep: anthropic/claude-opus-4.8
+
+# ── rol → alias ───────────────────────────────────────────────────────
 # Principio (sandwich de razonamiento): el gasto en razonamiento es
 # proporcional al FAN-OUT del artefacto — una spec o un plan lo leen N
-# agentes aguas abajo (modelo caro); un diff lo lee uno (modelo medio);
-# un digest no lo lee nadie dos veces (modelo barato).
+# agentes aguas abajo (deep); un diff lo lee uno (smart); un digest no
+# lo lee nadie dos veces (fast). Aquí van ALIASES, nunca IDs crudos.
 
 roles:
-  orquestador:  {{MODEL_ARCHITECT}}    # sesión principal: coordina, no implementa
-  architect:    {{MODEL_ARCHITECT}}    # planes, síntesis de RFC, ADRs
-  abogados:     {{MODEL_ARCHITECT}}    # constituciones y litigio de ownership
-  reviewer:     {{MODEL_REVIEWER}}     # veredictos + compliance matrix
-  implementer:  {{MODEL_IMPLEMENTER}}  # ejecución de tareas del DAG
-  qa:           {{MODEL_IMPLEMENTER}}  # ejercitar criterios de aceptación
-  mechanical:   {{MODEL_MECHANICAL}}   # digest, triage, commits, limpieza
+  orquestador: {{MODEL_ARCHITECT}}
+  architect: {{MODEL_ARCHITECT}}
+  abogados: {{MODEL_ARCHITECT}}
+  reviewer: {{MODEL_REVIEWER}}
+  implementer: {{MODEL_IMPLEMENTER}}
+  qa: {{MODEL_IMPLEMENTER}}
+  mechanical: {{MODEL_MECHANICAL}}
+  escalation: {{MODEL_ESCALATION}}
 
-# Escalación: la aplica el COMANDO que orquesta (no es automática del
-# runtime). Regla dura: escalar modelo NUNCA sustituye escalar a humano
-# cuando el presupuesto de loop ({{LOOP_BUDGET}}) se agota.
-escalation:
-  implementer:
-    to: {{MODEL_ESCALATION}}
-    when:
-      - "2 veredictos fail consecutivos del reviewer en la misma tarea"
-      - "la tarea toca >1 lenguaje o migra un contrato proto"
-      - "el plan la marcó complexity: high"
-  reviewer:
-    to: {{MODEL_ARCHITECT}}
-    when:
-      - "el diff supera el presupuesto de review (~400 líneas) y no se pudo rebanar"
+# ── excepciones por agente ────────────────────────────────────────────
+# Una línea por excepción: <archivo de .claude/agents/ sin .md>: <alias>.
+# Gana sobre el rol. Ej.:
+#   svc-atlas: smart
+#   qa: fast
+overrides:
 
-# Cronjobs (headless: claude -p --model X --effort Y --max-budget-usd Z)
-# tier barato = detectar/redactar · medio = arreglar acotado · caro = escribir
+# ── escalación (la aplica el comando que orquesta; ver /implement) ────
+# El implementer sube a roles.escalation cuando:
+#   · 1 veredicto fail cuyo blocking revele comprensión equivocada del
+#     problema (no un detalle mecánico) — cada ronda extra con el modelo
+#     equivocado son 10-20 min de wall-clock
+#   · 2 veredictos fail consecutivos en la misma tarea (de cualquier tipo)
+#   · un watchdog lo mató por falta de heartbeat
+#   · la tarea toca >1 lenguaje o migra un contrato proto
+#   · el plan la marcó complexity: high
+# El reviewer sube a roles.architect si el diff supera ~400 líneas y no
+# se pudo rebanar. Regla dura: escalar modelo NUNCA sustituye escalar a
+# humano cuando el presupuesto de loop ({{LOOP_BUDGET}}) se agota.
+
+# ── cronjobs (headless: claude -p --model <id> --effort <e>) ──────────
+# tier → alias; cron-runner resuelve el ID con stamp-models.sh.
+# fast = detectar/redactar · smart = arreglar acotado · deep = escribir
 # tests/reglas nuevas (lo más difícil de hacer bien).
+
 cronjobs:
-  cheap:  { model: {{MODEL_MECHANICAL}}, effort: low }     # digest, doc-gardener, janitor, ratchet
-  medium: { model: {{MODEL_IMPLEMENTER}}, effort: medium } # ci-doctor, dep-shepherd, vuln-watch, dead-code, slo-watchdog
-  expensive: { model: {{MODEL_ESCALATION}}, effort: high } # mutation-sentinel, rule-miner, flake-fix
+  cheap: {{MODEL_MECHANICAL}}
+  medium: {{MODEL_IMPLEMENTER}}
+  expensive: {{MODEL_ESCALATION}}
+
+cronjob_effort:
+  cheap: low
+  medium: medium
+  expensive: high
 
 # Presupuestos por invocación headless (USD). El cron-runner los pasa
 # como --max-budget-usd y registra el gasto real en el ledger.

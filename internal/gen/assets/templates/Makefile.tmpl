@@ -14,11 +14,26 @@ doctor: ## salud del harness (CLIs, MCPs, hooks, links, secretos)
 secrets: ## materializa secretos ({{SECRETS_SOURCE}} → .secrets)
 	@bash scripts/secrets.sh pull
 
+models: ## re-estampa los agentes desde models.yaml (edítalo y corre esto)
+	@bash scripts/stamp-models.sh
+
+graph: ## construye/refresca el grafo de graphify (incremental por HEADs)
+	@bash scripts/graph-refresh.sh
+
 wt: ## crea worktrees: make wt TASK=<id> REPOS="a b"
 	@bash scripts/worktree-task.sh $(TASK) $(REPOS)
 
 wt-rm: ## quita worktrees de una tarea: make wt-rm TASK=<id>
 	@bash scripts/worktree-task.sh --rm $(TASK)
+
+gowork: ## loop nativo Go: regenera go.work: make gowork [TASK=<id>]
+	@bash scripts/gowork.sh $(TASK)
+
+py: ## loop nativo Python (uv): make py CMD='sync' [REPO=<repo>] [TASK=<id>]
+	@bash scripts/py.sh "$(CMD)" "$(REPO)" "$(TASK)"
+
+fe: ## loop nativo frontend: make fe CMD='install' [REPO=<repo>] [TASK=<id>]
+	@bash scripts/fe.sh "$(CMD)" "$(REPO)" "$(TASK)"
 
 ship: ## gates + push: make ship TASK=<id> REPO=<repo>
 	@bash scripts/ship.sh $(TASK) $(REPO)
@@ -29,7 +44,7 @@ watch: ## vigila el deploy: make watch TASK=<id> REPO=<repo>
 usage: ## costo por sesión/tarea (ccusage — la báscula oficial)
 	@ccusage
 
-ui: ## panel en vivo: agentes, fases, tokens, terminales, otras máquinas (solo lectura, solo 127.0.0.1)
-	@bash scripts/ui/panel.sh $(or $(PORT),7717)
+ui: ## panel oficial (harness ui · 7180): agentes, fases, tokens, terminales, otras máquinas — solo lectura, solo 127.0.0.1
+	@harness ui $(if $(PORT),--port $(PORT))
 
-.PHONY: help init doctor secrets wt wt-rm ship watch usage ui
+.PHONY: help init doctor secrets wt wt-rm gowork py fe ship watch usage ui

@@ -1,7 +1,9 @@
 # vuln-watch — vulnerabilidades nuevas en dependencias (diff contra ayer).
+# osv-scanner cubre dependencias (lockfiles); trivy —si está instalado—
+# suma lo que osv no ve: Dockerfiles/imagenes base e IaC misconfig.
 JOB_NAME=vuln-watch
 JOB_TIER=medium
-JOB_TOOLS="Read,Grep,Glob,Bash(gh *),Bash(git *),Bash(osv-scanner *),Bash(npm *),Bash(go *),Bash(uv *),Edit,Write"
+JOB_TOOLS="Read,Grep,Glob,Bash(gh *),Bash(git *),Bash(osv-scanner *),Bash(trivy *),Bash(npm *),Bash(go *),Bash(uv *),Edit,Write"
 
 detect() {
   command -v osv-scanner >/dev/null || return 3
@@ -10,6 +12,13 @@ detect() {
   osv-scanner scan --recursive repos/ --format json 2>/dev/null \
     | jq -r '.results[]?.packages[]? | .package.name as $p | .vulnerabilities[]? | "\(.id) \($p)"' \
     | sort -u > "$today" || true
+  # trivy (fail-open): config scan de Dockerfiles/IaC — HIGH/CRITICAL solamente
+  if command -v trivy >/dev/null; then
+    trivy config --severity HIGH,CRITICAL --format json repos/ 2>/dev/null \
+      | jq -r '.Results[]? | .Target as $t | .Misconfigurations[]? | "\(.ID) \($t)"' \
+      | sort -u >> "$today" || true
+    sort -u -o "$today" "$today"
+  fi
   if [ -f "$prev" ]; then
     comm -13 "$prev" "$today" > "$FINDINGS"
   else
