@@ -1,5 +1,5 @@
 {
-  "installer_commit": "6c5be0cef08e362f9a226f9978485073d1f5d770",
+  "installer_commit": "3ec039156648f1ed91b78299af7bcbd5a93c30f1",
   "files": {
     "catalog/capabilities.json": "8ffda296f8016a12a3dd2c4bfbd56aba57089a763ba9dfae003e1c4e24d326f3",
     "prompts/archaeology-service.md": "164a89fc1b114447669c100b3d4176ee9072b7f4897791c4cdf15374ecc68981",
@@ -62,7 +62,7 @@
     "templates/scripts/bootstrap.sh.tmpl": "3193b36bcad6d637e1ed7c1f92e2adf9ec5213e4c63b93a77312b1164e017c36",
     "templates/scripts/build-slot.sh": "7d7f22344d6ec0c7846ff1a22d5be0f653ff770ecfcf111f4843749d8078b641",
     "templates/scripts/deploy-watch.sh.tmpl": "806ecb474073e1b2fca7b886520931ccf716ae189e1e71d9e9d6726342784f1a",
-    "templates/scripts/emit.sh": "143690b39a1e9bd56eeb3e76d91bfacb380117c1214aca01caae67f89293abb4",
+    "templates/scripts/emit.sh": "a6bc9f41c0b777bc87a74145eb6e9727324b7b461fd40978e0f4851987c1d8c0",
     "templates/scripts/evidence.py": "cbc96002b56a85724c6359311739be21ac5f0bf07614d7e56c08f8fb28532b3c",
     "templates/scripts/fe.sh": "56e1542ea5128c4f2109ef3260a868e2dcd87162395df493785a1c2bcf0943de",
     "templates/scripts/gowork.sh": "b3621c53be0067b4fe37b5d6b045a2af72996f241fca91b78eccd487830ec01c",
