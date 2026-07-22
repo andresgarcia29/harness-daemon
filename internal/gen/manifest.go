@@ -116,7 +116,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "docs/testing-policy.md.tmpl", Dst: "docs/harness/testing-policy.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/evidence.md", Dst: "docs/harness/evidence.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/policy.md", Dst: "docs/harness/policy.md", Mode: reg, When: always})
-	add(GenFile{Src: "docs/minions-context-distill.md", Dst: "docs/harness/minions-context-distill.md", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "docs/minions-decomposition.md", Dst: "docs/harness/minions-decomposition.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/quality.md.tmpl", Dst: "docs/quality.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/adr-template.md", Dst: "docs/adr/ADR-0000-template.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/cronjobs.md.tmpl", Dst: "docs/harness/cronjobs.md", Mode: reg, Render: true,
@@ -153,7 +153,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	for _, s := range []string{"worktree-task.sh", "quiet.sh", "with-secrets.sh", "emit.sh",
 		"build-slot.sh", "gowork.sh", "py.sh", "fe.sh",
 		"repo-brief.sh", "stamp-models.sh", "graph-refresh.sh",
-		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "context-distill.sh"} {
+		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "minion-probe.sh"} {
 		add(GenFile{Src: "scripts/" + s, Dst: "scripts/" + s, Mode: sh, When: always})
 	}
 	// doctor.sh: la copia autocontenida (viene de assets/scripts, no de templates)
