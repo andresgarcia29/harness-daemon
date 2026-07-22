@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/andresgarcia29/harness-daemon/internal/store"
+
+	"github.com/andresgarcia29/harness-daemon/internal/gen"
 )
 
 type CmdDoc struct {
@@ -37,6 +39,10 @@ type SkillDoc struct {
 	Name string `json:"name"`
 	Desc string `json:"desc"`
 	OK   bool   `json:"ok"`
+	// Layer: upstream (la trae el plugin, manifest del generador) |
+	// compartida (skills-sync, marca .managed) | local (nadie la pisa)
+	Layer  string `json:"layer,omitempty"`
+	Source string `json:"source,omitempty"` // compartida: repo@ref#sha
 }
 type Toolbox struct {
 	Version  string     `json:"version"`
@@ -48,14 +54,16 @@ type Toolbox struct {
 	Skills   []SkillDoc `json:"skills"`
 }
 type McpServer struct {
-	Name      string    `json:"name"`
-	Command   string    `json:"command"`
-	Args      []string  `json:"args"`
-	Wrapped   bool      `json:"wrapped"`
-	BinOK     bool      `json:"bin_ok"`
-	SecretsOK *bool     `json:"secrets_ok"`
-	Env       []string  `json:"env"`
-	Probe     *McpProbe `json:"probe"` // la sonda viva (OPERAR): se llena al "Probar"
+	Name           string    `json:"name"`
+	Command        string    `json:"command"`
+	Args           []string  `json:"args"`
+	Wrapped        bool      `json:"wrapped"`
+	BinOK          bool      `json:"bin_ok"`
+	SecretsOK      *bool     `json:"secrets_ok"`
+	SecretsNeeded  []string  `json:"secrets_needed,omitempty"`
+	SecretsMissing []string  `json:"secrets_missing,omitempty"`
+	Env            []string  `json:"env"`
+	Probe          *McpProbe `json:"probe"` // la sonda viva (OPERAR): se llena al "Probar"
 }
 
 // McpProbe: resultado del handshake JSON-RPC real contra un servidor MCP.
@@ -141,7 +149,8 @@ func BuildToolbox(ws string) *Toolbox {
 			if name == "" {
 				name = filepath.Base(d)
 			}
-			tb.Skills = append(tb.Skills, SkillDoc{Name: name, Desc: clip(fm["description"], 180), OK: len(fm) > 0})
+			layer, source := skillLayer(ws, d)
+			tb.Skills = append(tb.Skills, SkillDoc{Name: name, Desc: clip(fm["description"], 180), OK: len(fm) > 0, Layer: layer, Source: source})
 		}
 	}
 	if f, err := os.Open(filepath.Join(ws, "Makefile")); err == nil {
@@ -261,8 +270,11 @@ func BuildMcp(ws string) []McpServer {
 		if len(args) > 6 {
 			args = args[:6]
 		}
+		needed, missing := mcpSecretKeys(ws, n)
 		out = append(out, McpServer{Name: n, Command: sv.Command, Args: args,
-			Wrapped: wrapped, BinOK: binOK, SecretsOK: secretsOK, Env: env, Probe: mcpProbeGet(n)})
+			Wrapped: wrapped, BinOK: binOK, SecretsOK: secretsOK,
+			SecretsNeeded: needed, SecretsMissing: missing,
+			Env: env, Probe: mcpProbeGet(n)})
 	}
 	return out
 }
@@ -430,4 +442,59 @@ func TaskEvents(db store.Queryer, wsID, taskID string) []Event {
 		out = append(out, e)
 	}
 	return out
+}
+
+// mcpSecretKeys: qué CLAVES pide el catálogo para este MCP y cuáles faltan en
+// .secrets. NOMBRES solamente, jamás valores: el estado se ve, el secreto no.
+func mcpSecretKeys(ws, name string) (needed, missing []string) {
+	caps, err := gen.Catalog()
+	if err != nil {
+		return nil, nil
+	}
+	present := map[string]bool{}
+	if b, err := os.ReadFile(filepath.Join(ws, ".secrets")); err == nil {
+		for _, ln := range strings.Split(string(b), "\n") {
+			ln = strings.TrimSpace(ln)
+			if ln == "" || strings.HasPrefix(ln, "#") {
+				continue
+			}
+			if i := strings.Index(ln, "="); i > 0 {
+				present[strings.TrimPrefix(ln[:i], "export ")] = true
+			}
+		}
+	}
+	for _, c := range caps {
+		if c.Mcp != name {
+			continue
+		}
+		for _, sr := range c.Secrets {
+			needed = append(needed, sr.Key)
+			if !present[sr.Key] {
+				missing = append(missing, sr.Key)
+			}
+		}
+	}
+	sort.Strings(needed)
+	sort.Strings(missing)
+	return needed, missing
+}
+
+// skillLayer: la capa de una skill por su marca en disco (procedencia
+// verificable, no convención de fe). upstream = manifest del generador;
+// compartida = .managed de skills-sync; local = ninguna.
+func skillLayer(ws, dir string) (layer, source string) {
+	if b, err := os.ReadFile(filepath.Join(dir, ".managed")); err == nil {
+		first := strings.SplitN(string(b), "\n", 2)[0]
+		return "compartida", strings.TrimSpace(first)
+	}
+	rel := ".claude/skills/" + filepath.Base(dir) + "/SKILL.md"
+	if b, err := os.ReadFile(filepath.Join(ws, ".harness", "gen-manifest.json")); err == nil {
+		var m map[string]any
+		if json.Unmarshal(b, &m) == nil {
+			if _, ok := m[rel]; ok {
+				return "upstream", ""
+			}
+		}
+	}
+	return "local", ""
 }
