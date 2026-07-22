@@ -76,12 +76,12 @@ func readMcpConfig(ws string) map[string]McpConf {
 	return out
 }
 
-// OpProbeMcp sondea TODOS los MCP de <ws>/.mcp.json en paralelo (cap 4).
-func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
-	if _, ok := o.Guard(rw, r); !ok {
-		return
-	}
-	servers := readMcpConfig(o.WS)
+// ProbeAllMcp sondea TODOS los MCP de <ws>/.mcp.json en paralelo (cap 4) y
+// cachea cada resultado (el snapshot lo re-adjunta con su timestamp). La usan
+// el botón del panel Y la sonda automática periódica del daemon: el estado de
+// los MCP se VE siempre, no solo cuando alguien se acuerda de apretar.
+func ProbeAllMcp(ws string) map[string]McpProbe {
+	servers := readMcpConfig(ws)
 	out := map[string]McpProbe{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -92,7 +92,7 @@ func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			p := probeMcpServer(o.WS, sv)
+			p := probeMcpServer(ws, sv)
 			mcpProbeSet(name, p)
 			mu.Lock()
 			out[name] = p
@@ -100,6 +100,15 @@ func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
 		}(name, sv)
 	}
 	wg.Wait()
+	return out
+}
+
+// OpProbeMcp: la sonda a demanda desde el panel.
+func (o *Op) OpProbeMcp(rw http.ResponseWriter, r *http.Request) {
+	if _, ok := o.Guard(rw, r); !ok {
+		return
+	}
+	out := ProbeAllMcp(o.WS)
 	o.emit("decision", "el humano sondeó los MCP desde el panel", "")
 	writeJSON(rw, 200, map[string]any{"ok": true, "probed": out})
 }

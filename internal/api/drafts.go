@@ -70,7 +70,7 @@ type LawDoc struct {
 	Path   string `json:"path"`
 	Kind   string `json:"kind"`
 	Title  string `json:"title"`
-	Status string `json:"status"` // draft | ratified | plain (sin frontmatter de status)
+	Status string `json:"status"`          // draft | ratified | plain (sin frontmatter de status)
 	Agent  string `json:"agent,omitempty"` // cluster re-excavable (svc-*)
 }
 
