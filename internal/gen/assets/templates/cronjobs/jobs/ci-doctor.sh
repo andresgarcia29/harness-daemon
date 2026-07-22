@@ -23,7 +23,12 @@ detect() {
 
 JOB_PROMPT='Eres el ci-doctor del harness. Por cada run fallido de los
 hallazgos: (1) lee el log de fallo con `gh run view <id> --repo <slug>
---log-failed` (vía scripts/quiet.sh si es largo); (2) clasifica: flaky
+--log-failed` (vía scripts/quiet.sh si es largo) y EXTRAE TODAS las
+causas de una vez (grep de FAIL/❌/error sobre el log completo): un run
+rojo casi nunca tiene una sola, y arreglar de a una quema un ciclo de
+CI por causa; (1b) OJO con el entorno: el runner es ubuntu (sh=dash,
+/tmp plano, sin homebrew): un fix que solo probaste en tu entorno no
+está probado; (2) clasifica: flaky
 (re-lanza el run UNA vez y anota al flake-warden) · infra (OOM/timeout:
 issue con diagnóstico) · rotura real (fix quirúrgico mínimo en rama
 bot/, PR; si el fix no es obvio en 2 intentos, PR de REVERT del commit
