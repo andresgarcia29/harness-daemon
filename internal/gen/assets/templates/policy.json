@@ -3,23 +3,47 @@
   "workflow": {
     "initial_phase": "intake",
     "allowed_transitions": {
-      "intake": ["rfc"],
-      "rfc": ["implement"],
-      "implement": ["review"],
-      "review": ["implement", "ship"],
-      "ship": ["deploy"],
-      "deploy": ["archive"],
+      "intake": [
+        "rfc"
+      ],
+      "rfc": [
+        "implement"
+      ],
+      "implement": [
+        "review"
+      ],
+      "review": [
+        "implement",
+        "ship"
+      ],
+      "ship": [
+        "deploy"
+      ],
+      "deploy": [
+        "archive"
+      ],
       "archive": [],
       "blocked": []
     },
     "lanes": {
       "express": {
         "allowed_transitions": {
-          "intake": ["implement"],
-          "implement": ["review"],
-          "review": ["implement", "ship"],
-          "ship": ["deploy"],
-          "deploy": ["archive"],
+          "intake": [
+            "implement"
+          ],
+          "implement": [
+            "review"
+          ],
+          "review": [
+            "implement",
+            "ship"
+          ],
+          "ship": [
+            "deploy"
+          ],
+          "deploy": [
+            "archive"
+          ],
           "archive": [],
           "blocked": []
         }
@@ -27,7 +51,11 @@
       "standard": {},
       "full": {}
     },
-    "lane_escalation": ["express", "standard", "full"],
+    "lane_escalation": [
+      "express",
+      "standard",
+      "full"
+    ],
     "allowed_pause_reasons": [
       "draft_constitution",
       "irreversible_architecture",
@@ -37,7 +65,8 @@
       "gate_autofix_exhausted",
       "deploy_failed",
       "prompt_injection",
-      "requested_boundary"
+      "requested_boundary",
+      "custom_step_failed"
     ]
   },
   "limits": {
@@ -46,6 +75,8 @@
   "ship": {
     "require_independent_review": true,
     "require_fresh_evidence": true,
-    "required_evidence_kinds": ["test"]
+    "required_evidence_kinds": [
+      "test"
+    ]
   }
 }

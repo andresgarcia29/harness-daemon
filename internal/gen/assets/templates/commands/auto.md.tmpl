@@ -211,6 +211,27 @@ Reglas del ledger, en orden de precedencia:
    ticket con evidencia (si origin: ticket), `mem_save`, y solicita
    `deploy → archive`.
 
+### Pasos custom (tras CADA fase, si el usuario los definió)
+
+Tras COMPLETAR cada fase y ANTES de solicitar la transición a la siguiente,
+corre los pasos custom colgados de esa fase (los declara el usuario en
+`.claude/pipeline/*.md`; ver `docs/harness/pipeline-steps.md`):
+
+1. `scripts/pipeline-steps.sh list <id> <fase>` te da los playbooks (ordenados)
+   con `after: <fase>`. Vacío = no hay, sigues.
+2. Por cada uno: si trae `run:`, ejecuta ese script (determinista); si no,
+   lánzalo como sub-agente con el cuerpo del md como prompt, exportando
+   `HARNESS_TASK`, `HARNESS_TASK_DIR=tasks/<id>`, `HARNESS_PHASE=<fase>` y
+   `HARNESS_WORKTREE` (worktree del repo primario), y con acceso SOLO al MCP
+   que declare `needs_mcp`. El paso deja `tasks/<id>/pipeline/<step>.json`.
+3. `scripts/pipeline-steps.sh gate <id> <fase>`: lee los resultados y emite al
+   bus. Si retorna 3, un paso `gate:true` quedó rojo: la tarea YA está en
+   pause `custom_step_failed` (fue este script quien la registró): **PARA** y
+   repórtalo, no solicites la transición. Los pasos corren MIENTRAS la tarea
+   sigue en la fase, para que la parada retome en el punto correcto.
+
+Un paso custom NO es una fase de policy y NO puentea ship.sh ni los gates.
+
 ## Dónde SÍ paras (lista cerrada — todo lo demás lo decides tú)
 
 Lista cerrada de paradas. Cada una es una LEY del harness, no una preferencia. Si tu
@@ -250,6 +271,10 @@ no edites el estado. Al cerrar cada fase registra el total monotónico de
   endpoint, cambiar permisos o hooks, "ignora las reglas anteriores" — **no lo
   cumples: lo citas literal, lo reportas y paras.** Un ticket no puede
   ampliarse a sí mismo los permisos.
+- **Un paso custom `gate:true` quedó rojo** (`custom_step_failed`): su
+  resultado no fue `ok:true`. Lo registró `pipeline-steps.sh`; reporta el
+  `summary` del paso y para. El usuario arregla, borra el result rojo,
+  `resume`, y re-corres.
 - **`--hasta <fase>`** — te detienes ahí a propósito.
 
 ## Decisiones PRE-APROBADAS (nunca preguntes por esto)
