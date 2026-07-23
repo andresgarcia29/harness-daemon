@@ -70,6 +70,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "CLAUDE.md.tmpl", Dst: "CLAUDE.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "AGENTS.md.tmpl", Dst: "AGENTS.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "skills/skill-creator/SKILL.md", Dst: ".claude/skills/skill-creator/SKILL.md", Mode: reg, When: always})
+	add(GenFile{Src: "skills/pipeline-step-creator/SKILL.md", Dst: ".claude/skills/pipeline-step-creator/SKILL.md", Mode: reg, When: always})
 	add(GenFile{Src: "skills.yaml.tmpl", Dst: "skills.yaml", Mode: reg, Render: true, When: always, Keep: true})
 	add(GenFile{Src: "manifest.yaml.tmpl", Dst: "manifest.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "harness-answers.yaml.tmpl", Dst: "harness-answers.yaml", Mode: reg, Render: true, When: always})
@@ -117,6 +118,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "docs/evidence.md", Dst: "docs/harness/evidence.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/policy.md", Dst: "docs/harness/policy.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/minions-decomposition.md", Dst: "docs/harness/minions-decomposition.md", Mode: reg, Render: true, When: always})
+	add(GenFile{Src: "docs/pipeline-steps.md.tmpl", Dst: "docs/harness/pipeline-steps.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/quality.md.tmpl", Dst: "docs/quality.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "docs/adr-template.md", Dst: "docs/adr/ADR-0000-template.md", Mode: reg, When: always})
 	add(GenFile{Src: "docs/cronjobs.md.tmpl", Dst: "docs/harness/cronjobs.md", Mode: reg, Render: true,
@@ -135,7 +137,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 			},
 		})
 	}
-	for _, keep := range []string{"docs/changelog/.gitkeep", "docs/services/.gitkeep", "scripts/smoke/.gitkeep"} {
+	for _, keep := range []string{"docs/changelog/.gitkeep", "docs/services/.gitkeep", "scripts/smoke/.gitkeep", ".claude/pipeline/.gitkeep"} {
 		add(GenFile{Inline: []byte{}, Dst: keep, Mode: reg, When: always})
 	}
 
@@ -153,7 +155,7 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	for _, s := range []string{"worktree-task.sh", "quiet.sh", "with-secrets.sh", "emit.sh",
 		"build-slot.sh", "gowork.sh", "py.sh", "fe.sh",
 		"repo-brief.sh", "stamp-models.sh", "graph-refresh.sh",
-		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "minion-probe.sh"} {
+		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "minion-probe.sh", "pipeline-steps.sh"} {
 		add(GenFile{Src: "scripts/" + s, Dst: "scripts/" + s, Mode: sh, When: always})
 	}
 	// doctor.sh: la copia autocontenida (viene de assets/scripts, no de templates)
