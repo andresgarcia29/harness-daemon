@@ -39,7 +39,7 @@ if [ -f "$WS/manifest.yaml" ] && [ -d "$WS/repos" ]; then
 fi
 
 # 2 · Scripts de instancia ejecutables
-for s in ship.sh worktree-task.sh quiet.sh with-secrets.sh emit.sh          build-slot.sh gowork.sh py.sh fe.sh repo-brief.sh          stamp-models.sh graph-refresh.sh pull-all.sh skills-sync.sh          verdict-scaffold.sh minion-probe.sh; do
+for s in ship.sh worktree-task.sh quiet.sh with-secrets.sh emit.sh          build-slot.sh gowork.sh py.sh fe.sh repo-brief.sh          stamp-models.sh graph-refresh.sh pull-all.sh skills-sync.sh          verdict-scaffold.sh minion-probe.sh pipeline-steps.sh; do
   if [ -f "$WS/scripts/$s" ]; then
     [ -x "$WS/scripts/$s" ] && ok "scripts/$s ejecutable" || fail "scripts/$s no ejecutable" "chmod +x scripts/$s"
     bash -n "$WS/scripts/$s" 2>/dev/null && ok "scripts/$s sintaxis válida" || fail "scripts/$s con error de sintaxis" "revisa el archivo (bash -n scripts/$s)"
@@ -252,6 +252,38 @@ if [ -f "$WS/skills.yaml" ] && [ -x "$WS/scripts/skills-sync.sh" ]; then
   fi
 fi
 [ -f "$WS/AGENTS.md" ] && ok "AGENTS.md presente (mapa multi-herramienta)" || warn "sin AGENTS.md — Cursor/Kimi/otros agentes no tienen punto de entrada"
+
+# Pasos custom del pipeline (.claude/pipeline/*.md): cada playbook debe
+# declarar un after válido, y si pide needs_mcp ese MCP debe estar en
+# .mcp.json (si no, el paso agéntico alucina o cuelga). Intersección de
+# conjuntos, cero opinión. Ver docs/harness/pipeline-steps.md.
+if [ -d "$WS/.claude/pipeline" ]; then
+  fmval() { awk -v k="$2:" 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} NR>1{l=$0;sub(/[ 	]*#.*$/,"",l);n=index(l,":");if(n>0){key=substr(l,1,n);val=substr(l,n+1);gsub(/[ 	]/,"",key);sub(/^[ 	]+/,"",val);sub(/[ 	]+$/,"",val);if(key==k){print val;exit}}}' "$1" 2>/dev/null; }
+  for pb in "$WS"/.claude/pipeline/*.md; do
+    [ -f "$pb" ] || continue
+    pbn="$(basename "$pb")"
+    after="$(fmval "$pb" after)"
+    case "$after" in
+      intake|rfc|implement|review|ship|deploy) ok "paso custom $pbn (after: $after)" ;;
+      "") fail "paso custom $pbn sin 'after:'" "declara after: intake|rfc|implement|review|ship|deploy en el frontmatter" ;;
+      *) fail "paso custom $pbn con after inválido: $after" "usa una fase real: intake|rfc|implement|review|ship|deploy" ;;
+    esac
+    mcp="$(fmval "$pb" needs_mcp)"
+    if [ -n "$mcp" ]; then
+      if [ -f "$WS/.mcp.json" ] && jq -e --arg m "$mcp" '.mcpServers[$m]' "$WS/.mcp.json" >/dev/null 2>&1; then
+        ok "paso $pbn: MCP '$mcp' presente"
+      else
+        fail "paso custom $pbn declara needs_mcp '$mcp' AUSENTE en .mcp.json" "añade el MCP (elige la capacidad en /harness-init) o corrige needs_mcp en $pbn"
+      fi
+    fi
+    runp="$(fmval "$pb" run)"
+    if [ -n "$runp" ]; then
+      case "$runp" in scripts/*..*|*/..*|/*) fail "paso $pbn con run inseguro: $runp" "usa una ruta dentro de scripts/ sin .." ;;
+      scripts/*) [ -x "$WS/$runp" ] && ok "paso $pbn: run $runp ejecutable" || fail "paso $pbn: run $runp no ejecutable/ausente" "chmod +x $runp o corrige la ruta" ;;
+      *) fail "paso $pbn: run debe vivir en scripts/: $runp" "mueve el script a scripts/" ;; esac
+    fi
+  done
+fi
 # Integridad de hooks: TODO hook referenciado en settings.json debe existir y
 # ser ejecutable. Un hook registrado pero ausente spamea "not found" en CADA
 # tool call del agente (visto en un VPS real: el generador olvidó un archivo).
