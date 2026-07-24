@@ -18,8 +18,9 @@ func TestCatalogEmbebido(t *testing.T) {
 	for _, c := range caps {
 		if c.Provider == "mcp" {
 			mcps++
-			if c.Mcp == "" || c.Config == nil || c.Config.Command == "" {
-				t.Fatalf("MCP sin config: %+v", c)
+			// local (stdio) → command; remoto → url. Una de las dos, siempre.
+			if c.Mcp == "" || c.Config == nil || (c.Config.Command == "" && c.Config.URL == "") {
+				t.Fatalf("MCP sin config usable (ni command ni url): %+v", c)
 			}
 		}
 	}

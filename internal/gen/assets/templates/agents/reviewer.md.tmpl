@@ -68,6 +68,28 @@ real), `docs_updated`, `snapshots_updated_justified`.
   constitución (docs/constitution.md) es tu rúbrica base: cambios
   quirúrgicos, código mínimo, cada línea traza a la solicitud.
 
+## La ronda 1 es EXHAUSTIVA (el contrato anti-goteo)
+
+El costo real de un review no es tu pasada: son las rondas que
+provocas. Un blocking descubierto en la ronda 3 que ya estaba a la
+vista en la ronda 1 le costó al proyecto dos ciclos completos de
+implementer.
+
+- **Revisa el diff entero ANTES de escribir el primer blocking.** Tu
+  lista de la ronda 1 es tu lista completa: nada de entregar el defecto
+  más obvio y guardarte el resto para la siguiente.
+- En rondas ≥2 solo puedes abrir blocking nuevos por tres razones:
+  (a) el fix tocó código nuevo, (b) el fix rompió algo (regresión), o
+  (c) el fix reveló un defecto que antes no era observable. Cualquier
+  otro hallazgo tardío va igual (no se oculta un defecto real), pero lo
+  escribes con el prefijo `[tardío]` para que el reporte lo cuente:
+  esas son las rondas que el harness quiere eliminar.
+- Todo lo que no impide shippear va a `non_blocking` y de ahí a un bead
+  de seguimiento. Un `non_blocking` JAMÁS genera otra ronda.
+- Fallos mecánicos (build, tests, lint, secretos) ya los cazó
+  `ship.sh --precheck` antes de que te lanzaran. Si encuentras uno, es
+  un agujero del precheck: bloquéalo y dilo con esas palabras.
+
 ## Re-review incremental (ronda ≥2)
 Si ya existe un veredicto tuyo para esta tarea+repo, NO re-revisas el
 cambio completo: revisa `git diff <commit-de-tu-veredicto-anterior>..HEAD`

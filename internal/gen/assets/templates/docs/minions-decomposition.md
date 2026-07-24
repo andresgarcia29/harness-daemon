@@ -1,11 +1,12 @@
 # MinionS: descomposición y fan-out (el supervisor parte, los workers responden)
 
-> Doc de capacidad del plugin (PROPUESTA, opt-in). No es un ADR de tu
-> instancia: vive en docs/harness/ para no colisionar con tu numeración de
-> ADRs. Si lo ratificas, registra TU decisión como el ADR que te toque.
+> Doc de capacidad del plugin. No es un ADR de tu instancia: vive en
+> docs/harness/ para no colisionar con tu numeración de ADRs. Registra TU
+> decisión (dejarlo en auto, forzarlo o apagarlo) como el ADR que te toque.
 
-- **Estado**: PROPUESTO (opt-in, default OFF; requiere ratificación humana)
-- **Fecha**: 2026-07-22
+- **Estado**: ACTIVO por carril (`minion_decompose: auto` = ON en
+  standard/full, OFF en express). `true` fuerza siempre, `false` apaga.
+- **Fecha**: 2026-07-22 (propuesta) · 2026-07-23 (default por carril)
 
 ## Qué es (y qué NO es)
 
@@ -34,9 +35,19 @@ tareas y los implementers corren en paralelo. Eso es MinionS a nivel de
 IMPLEMENTACIÓN. Lo que esta capacidad añade es descomposición un nivel
 ARRIBA: en el RAZONAMIENTO que produce el plan y el litigio, hoy monolítico.
 
-## El mecanismo (opt-in: `minion_decompose: true`)
+## Por qué el architect es un hilo fino
 
-En la fase RFC, con la bandera activa:
+Un planeador que lee 20 archivos llega a la síntesis con la ventana llena y
+la atención repartida: el context rot degrada justo la parte donde queríamos
+su juicio. Descomponer invierte el reparto. El architect ve briefs, grafo y
+respuestas citadas, y gasta su ventana en decidir. La regla operativa está en
+`.claude/agents/architect.md`: **si te falta un hecho, emites otra probe; no
+abres el archivo**. Excepción única: una probe que volvió `DESCONOCIDO`
+citando un archivo concreto, y solo ese rango.
+
+## El mecanismo (`minion_decompose: auto`)
+
+En la fase RFC, con la bandera activa (standard/full por default):
 
 1. **El architect (supervisor) emite `tasks/<id>/probes.json`**: sub-preguntas
    factuales con scope. Ejemplo:
@@ -50,26 +61,35 @@ En la fase RFC, con la bandera activa:
 2. **`scripts/minion-probe.sh <task> probes.json`** hace el fan-out: un worker
    barato por probe, EN PARALELO (cap = min(8, núcleos)), cada uno viendo solo
    su scope. Escribe `tasks/<id>/probes/<qid>.md` (citado).
-3. **El architect sintetiza** el plan + delta-spec sobre el pack de respuestas.
+3. **El architect sintetiza** el plan + delta-spec sobre el pack de respuestas,
+   en modo ultrathink (el plan es el artefacto que N implementers ejecutan
+   sin poder preguntar).
 
 La red de seguridad: cada worker CITA `archivo:línea` y dice `DESCONOCIDO` si
 su scope no responde; el supervisor ve qué quedó incierto y tira de la fuente
 cruda. Nunca sintetiza a ciegas.
+
+Presupuesto: **2 rondas de probes**. La primera descompone lo que sabes que no
+sabes; la segunda cubre lo que la primera reveló. Si tras esas dos sigue
+faltando un hecho que cambiaría el plan, no es un hueco de contexto: es una
+decisión que le toca a un humano, y se para.
 
 ## Alternativas rechazadas
 
 | Alternativa | Por qué no |
 |---|---|
 | Un tier `reader` que resume un blob (lo que se propuso antes) | Es selección de modelo disfrazada: el acto "inteligente" (qué extraer) queda en un solo modelo leyendo todo. NO es MinionS |
-| MinionS default-ON | Viola la ley del harness (arquitectura la ratifica un humano). Dos+ rondas del supervisor donde había una es cambio real |
+| MinionS default-ON en TODOS los carriles | En express el orquestador ya tiene el contexto en su sesión: descomponer ahí compra una vuelta de reloj sin comprar juicio. Por eso el default es `auto`, no `true` |
 | Un MCP dedicado | Un script + el CLI basta (regla CLI > MCP) |
 
-## Cómo ratificar y medir
+## Cómo medirlo (y cómo apagarlo)
 
-1. `minion_decompose: true` en harness-answers.yaml de una instancia.
-2. Correr `/auto` sobre una tarea FULL (cruza ownership, varios repos): ahí es
+1. Corre `/auto` sobre una tarea FULL (cruza ownership, varios repos): ahí es
    donde el supervisor tiene más que razonar y la descomposición paga.
-3. Comparar en el panel (Gastos): el input del architect debería caer y el
-   plan NO debería perder ownership/invariantes (los abogados son la red).
-4. Si el plan mejora o iguala a menor costo → default ON en un ADR sucesor. Si
-   no → queda como capacidad opt-in documentada.
+2. Compara en el panel (Gastos): el input del architect debe CAER, y el plan
+   no debe perder ownership ni invariantes (los abogados son la red).
+3. La otra métrica, la que importa de verdad: **rondas de review por tarea**
+   (`review_rounds` en `tasks/<id>/state.json`). Un plan hecho sobre hechos
+   citados se ve como tareas que pasan review en una sola ronda.
+4. Si en tu proyecto no paga, `minion_decompose: false` y el architect vuelve
+   a leer y razonar monolítico. La bandera es tuya; regístralo en un ADR.

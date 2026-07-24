@@ -23,10 +23,29 @@ Code lee `CLAUDE.md` (mismo mapa, más los hooks/comandos nativos).
 6. **Contratos proto: expand/contract siempre** (buf breaking es gate).
 7. Decisiones de arquitectura irreversibles → ADR `PROPOSED` en
    `docs/adr/` y esperar ratificación humana.
+7b. **El pensamiento caro va en el plan, no en el loop.** Planes,
+   síntesis de RFC y ADRs se escriben en modo **ultrathink** (en
+   herramientas sin esa palabra clave: el modo de razonamiento más
+   profundo que ofrezcan) y sin decisiones abiertas, verificado por
+   `scripts/plan-lint.sh <task-id>`. Y antes de pedir review, el
+   worktree pasa `scripts/ship.sh --precheck <task-id> <repo>`: los
+   gates mecánicos cuestan segundos, una ronda de review cuesta
+   minutos.
 8. **Estilo: prohibido el guion largo "—"** en todo texto que
    produzcas (docs, reportes, commits, specs). Delata texto de IA; usa
    coma, dos puntos o paréntesis. *Style rule: never write the em dash
    in any produced text; it reads as AI-generated.*
+9. **Un bug del harness se verifica y se reporta upstream.** Si falla un
+   artefacto del PLUGIN (`scripts/`, `.claude/hooks/`,
+   `.claude/commands/`, gates, panel, cronjobs) o contradice lo que su
+   propia cabecera documenta: repro mínimo dos veces con `bash -c`,
+   descarta que sea tu personalización o una versión atrasada, y corre
+   `scripts/harness-bug.sh report --title … --file … --repro … --impact …`
+   (verifica, redacta secretos, deduplica y levanta el issue en el repo
+   del plugin). Lo que falla en tu código, en tu instancia o en tu
+   configuración NO va upstream. Protocolo:
+   `.claude/skills/harness-bug-report/SKILL.md`. Un workaround
+   silencioso sobre un bug del harness es deuda para todos los demás.
 
 ⚠️ **Enforcement por herramienta**: en Claude Code, hooks locales
 (`.claude/hooks/`) bloquean el push directo y la edición de `repos/`
