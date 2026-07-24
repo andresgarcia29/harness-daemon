@@ -35,6 +35,9 @@ Dirección de dependencias (ley, referencia del DAG de shipping):
 5. **Trailer `Task: <id>` en todo commit** — gate en ship.sh.
 6. **Presupuestos**: máx {{LOOP_BUDGET}} iteraciones por loop; RFC máx
    2 rondas. Agotado → humano.
+6b. **Piensa hondo en el plan, no en el loop**: planes, síntesis de RFC
+   y ADRs van en **ultrathink** y sin decisiones abiertas
+   (`scripts/plan-lint.sh`); antes de review, `ship.sh --precheck` verde.
 7. **Decisiones fuera de `docs/` NO EXISTEN.** Lo decidido en chat se
    propone como ADR o se perdió.
 8. **Builds pesados serializados** (economía de CPU) — `docker

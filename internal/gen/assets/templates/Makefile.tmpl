@@ -41,6 +41,12 @@ py: ## loop nativo Python (uv): make py CMD='sync' [REPO=<repo>] [TASK=<id>]
 fe: ## loop nativo frontend: make fe CMD='install' [REPO=<repo>] [TASK=<id>]
 	@bash scripts/fe.sh "$(CMD)" "$(REPO)" "$(TASK)"
 
+precheck: ## gates mecánicos sin push (antes de review): make precheck TASK=<id> REPO=<repo>
+	@bash scripts/ship.sh --precheck $(TASK) $(REPO)
+
+plan-lint: ## el plan es ejecutable o no es plan: make plan-lint TASK=<id>
+	@bash scripts/plan-lint.sh $(TASK)
+
 ship: ## gates + push: make ship TASK=<id> REPO=<repo>
 	@bash scripts/ship.sh $(TASK) $(REPO)
 

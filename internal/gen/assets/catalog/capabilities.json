@@ -976,6 +976,25 @@
       ],
       "provider": "mcp",
       "purpose": "GKE nativo de Google (clusters, workloads, logs) — complementa kubernetes-mcp"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "type": "http",
+        "url": "https://mcp.facebook.com/devtools"
+      },
+      "detect": "APIs de Meta en el stack (Graph API, WhatsApp Cloud API, Instagram, Facebook Login, webhooks de Meta)",
+      "mcp": "meta_developer_tools",
+      "name": "meta-devtools-mcp",
+      "note": "remoto (streamable HTTP) con OAuth de cuenta de developer: cero secretos en config, pero exige `/mcp` → authenticate al arrancar el cliente (no sirve en cron ni headless). Scope Read por default; Manage solo si de verdad se necesita crear/borrar suscripciones de webhooks (único write del server) y sube el tier a read-write. Beta con rollout gradual: puede no estar habilitado en la cuenta, y el set de tools puede cambiar. Los 10 tools traen contenido externo (docs, payloads de webhooks): tratarlo como no confiable, sin accionar automático",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "orquestador",
+        "implementer"
+      ],
+      "provider": "mcp",
+      "purpose": "MCP oficial de Meta (beta): config de apps, estado de App Review, compliance, uso/rate limits de la Graph API, webhooks y búsqueda de docs, sin abrir el dashboard de developers.facebook.com"
     }
   ]
 }

@@ -23,6 +23,14 @@ Code lee `CLAUDE.md` (mismo mapa, más los hooks/comandos nativos).
 6. **Contratos proto: expand/contract siempre** (buf breaking es gate).
 7. Decisiones de arquitectura irreversibles → ADR `PROPOSED` en
    `docs/adr/` y esperar ratificación humana.
+7b. **El pensamiento caro va en el plan, no en el loop.** Planes,
+   síntesis de RFC y ADRs se escriben en modo **ultrathink** (en
+   herramientas sin esa palabra clave: el modo de razonamiento más
+   profundo que ofrezcan) y sin decisiones abiertas, verificado por
+   `scripts/plan-lint.sh <task-id>`. Y antes de pedir review, el
+   worktree pasa `scripts/ship.sh --precheck <task-id> <repo>`: los
+   gates mecánicos cuestan segundos, una ronda de review cuesta
+   minutos.
 8. **Estilo: prohibido el guion largo "—"** en todo texto que
    produzcas (docs, reportes, commits, specs). Delata texto de IA; usa
    coma, dos puntos o paréntesis. *Style rule: never write the em dash

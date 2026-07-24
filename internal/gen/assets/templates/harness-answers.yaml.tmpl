@@ -41,11 +41,13 @@ loop_budget: {{LOOP_BUDGET}}
 # supuestos). Para conducir fase por fase: comandos sueltos, no /auto.
 autonomy: {{AUTONOMY}}
 
-# MinionS (docs/harness/minions-decomposition.md, opt-in): el supervisor
-# descompone en sub-preguntas y workers baratos las responden EN PARALELO; el
-# supervisor sintetiza. No es "elegir modelo barato": es descomposición +
-# fan-out. Default off; cámbialo a true y compara el gasto del architect.
-minion_decompose: false
+# MinionS (docs/harness/minions-decomposition.md): el supervisor descompone en
+# sub-preguntas y workers baratos las responden EN PARALELO; el supervisor
+# sintetiza. No es "elegir modelo barato": es descomposición + fan-out, y es lo
+# que mantiene al architect como un HILO FINO (juicio, no lectura).
+#   auto  → ON en standard/full, OFF en express (recomendado)
+#   true  → siempre; false → nunca (el architect lee y razona monolítico)
+minion_decompose: auto
 
 # Orden de shipping: dependencias primero. Verificado por el arquitecto
 # en cada plan; ship.sh no lo impone (los contratos expand/contract lo

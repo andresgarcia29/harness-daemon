@@ -56,6 +56,14 @@ Si quieres conducir fase por fase, los comandos sueltos siguen ahí:
 `/feature <ticket>` → `/rfc` → `/implement` → `/review` → `/ship` →
 `/archive`. Reglas de entrada de tickets: `docs/harness/intake.md`.
 
+**Por qué no da vueltas** (las tres reglas que recortan iteraciones):
+el plan se piensa en modo `ultrathink` y pasa `make plan-lint TASK=<id>`
+(cero decisiones abiertas, archivos y criterios binarios por tarea); el
+worktree pasa `make precheck TASK=<id> REPO=<repo>` antes de pedir review
+(los gates mecánicos cuestan segundos, una ronda de reviewer cuesta
+minutos); y el reviewer entrega su lista de blocking COMPLETA en la
+primera ronda. Detalle en `docs/harness/pipeline.md`.
+
 **Modelos**: `models.yaml` es la única perilla — aliases `fast|smart|deep`,
 rol→alias, overrides por agente y el proveedor (anthropic/vertex/bedrock/
 kimi/openrouter). Cambias una línea y corres `make models`. Para una sola

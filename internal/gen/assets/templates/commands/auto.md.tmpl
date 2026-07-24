@@ -86,13 +86,19 @@ al blast radius, no al revés. Clasifica con señales DETERMINISTAS
   los commits se conservan; solo se recupera la deliberación saltada.
 
 **El mini-plan express** (lo escribes tú, sin lanzar architect ni abogados —
-ya tienes todo el contexto en esta sesión):
-- `tasks/<id>/plan.md`: 1 tarea, el repo, criterios binarios, archivos
-  sospechados (del grafo, no de grep), complexity.
+ya tienes todo el contexto en esta sesión). **Piénsalo en modo ultrathink
+aunque sea corto**: express recorta sesiones LLM, no profundidad de
+decisión, y un mini-plan flojo se paga igual en rondas de review.
+- `tasks/<id>/plan.md`: 1 tarea en el formato de bloque `### T1 · <repo> ·
+  <título>` con repo/req/archivos/criterios/complexity/deps (el mismo que
+  usa el architect; lo verifica plan-lint). Los archivos salen del grafo,
+  no de grep.
 - `tasks/<id>/delta-spec.md`: los criterios de aceptación como requirements
   EARS `## ADDED` (2-6 líneas). Existe para que la compliance matrix del
   reviewer y `gate_evidence` operen IGUAL en todos los carriles: express
   recorta sesiones LLM, jamás artefactos ni gates.
+- `scripts/plan-lint.sh <id>` antes de pedir `intake → implement`. Rojo se
+  arregla ahí: es la revisión más barata del pipeline.
 
 ## Paso 0.2 — Estado ejecutable (la prosa no mueve fases)
 
@@ -173,7 +179,14 @@ Reglas del ledger, en orden de precedencia:
    REESCRIBES verificable y lo anotas en el ledger. Solo paras si caes
    en la lista de abajo. Cuando quede válido: express solicita
    `intake → implement`; standard/full solicitan `intake → rfc`.
-2. **RFC** (solo standard/full). En **standard** el architect redacta
+2. **RFC** (solo standard/full). El architect es un **hilo fino que
+   piensa hondo**: su prompt de arranque empieza con **ultrathink**, y su
+   contexto son briefs, grafo y el pack de probes, nunca volcados de
+   código. Corre su descomposición MinionS (`minion_decompose: auto` =
+   ON aquí): él emite `tasks/<id>/probes.json`, tú corres
+   `scripts/minion-probe.sh` y los workers responden en paralelo; él
+   sintetiza. Máx 2 rondas de probes.
+   En **standard** el architect redacta
    plan + delta-spec directo, SIN abogados: donde no se cruza ninguna
    frontera de ownership no hay litigio que valga sus tokens ni sus
    minutos. En **full**, abogados de los dominios CRUZADOS en PARALELO,
@@ -181,19 +194,25 @@ Reglas del ledger, en orden de precedencia:
    contratos: el repo proto. Si dos abogados chocan, el desempate es la
    evidencia (spec > ADR > map.md de ownership), no el consenso ni tu
    opinión — máx 2 rondas. Cuando plan, delta-spec y `dag.json` sean
-   válidos, ejecuta `scripts/harness-policy.py validate-dag
-   tasks/<id>/dag.json` y solicita `rfc → implement` sólo si queda verde.
+   válidos, ejecuta `scripts/plan-lint.sh <id>` y
+   `scripts/harness-policy.py validate-dag tasks/<id>/dag.json`, y
+   solicita `rfc → implement` sólo si los dos quedan verdes.
 3. **Implement**. Un worktree por repo, un implementer por tarea.
    `bd ready` manda: todo lo que el DAG no serializa va EN PARALELO.
    **Contexto de arranque, completo y mínimo**: su entrada del plan, sus
    criterios, y el brief de `.cache/briefs/<repo>.md` — el implementer
    NO explora el repo desde cero; Serena cubre el nivel símbolo.
-   Cada tarea que termina encola su review DE INMEDIATO (pipeline, no
-   barrera: T1 en review mientras T4 se implementa).
+   Cada tarea que termina pasa el **precheck** (`scripts/ship.sh
+   --precheck <id> <repo>`: los gates mecánicos del ship, sin veredicto
+   ni push) y con verde encola su review DE INMEDIATO (pipeline, no
+   barrera: T1 en review mientras T4 se implementa). Precheck rojo
+   vuelve al implementer y NO cuenta como ronda: el reviewer no vio nada.
 4. **Review**. Reviewer (veredicto + compliance matrix) y qa (ejercita
    los criterios) **EN PARALELO** — qa no espera el veredicto; el merge
    del campo `qa` es mecánico (ver /review). Al entrar solicita
-   `implement → review`. Loops fail→fix vuelven mediante
+   `implement → review`. El reviewer entrega su lista de blocking
+   COMPLETA en la ronda 1 y los `non_blocking` se vuelven beads, no
+   rondas. Loops fail→fix vuelven mediante
    `review → implement → review`; policy cuenta y limita las rondas. El
    re-review es INCREMENTAL: el reviewer re-evalúa el diff desde su
    veredicto anterior + los blocking, no el cambio completo otra vez.
@@ -286,6 +305,10 @@ no edites el estado. Al cerrar cada fase registra el total monotónico de
 - Cualquier supuesto que respete la precedencia de evidencia del ledger.
 - Crear labels de flujo faltantes en el tracker (needs-spec, agent-ready,
   in-harness, shipped) y publicar comentarios de trazabilidad.
+- Devolver al implementer por un precheck rojo: no es una ronda de review
+  ni consume presupuesto de loop. Tope 2 devoluciones; la tercera ya es la
+  parada de "gate rojo tras 2 rondas de autofix" (el precheck ES el gate).
+- Pedirle al architect una SEGUNDA ronda de probes (nunca una tercera).
 - Relanzar UNA vez a un subagente que murió SIN dejar cambios.
 - Crear go.work / config local al worktree si los `replace` relativos lo
   exigen para compilar.
@@ -347,4 +370,9 @@ Reglas:
 1. Qué se shippeó, por repo, con commits y estado del canary.
 2. **El ledger de supuestos completo** — es lo primero que va a auditar.
 3. Paradas y por qué (si las hubo).
-4. Costo (`ccusage`) y aprendizajes (`mem_save`).
+4. **Cuánto costó en vueltas**: rondas de review por tarea
+   (`review_rounds` de state.json), prechecks rojos (cada uno es una
+   ronda que NO se pagó) y blocking marcados `[tardío]`. Es la métrica
+   que dice si el plan estuvo bien hecho: un plan bueno se ve como
+   tareas de una sola ronda.
+5. Costo (`ccusage`) y aprendizajes (`mem_save`).
