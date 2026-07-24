@@ -33,6 +33,15 @@ models:
 
 loop_budget: {{LOOP_BUDGET}}
 
+# Canal de vuelta al plugin: cuando un agente tropieza con un bug del HARNESS
+# (no de tu código), lo verifica y levanta un issue en el repo de
+# harness-creator (scripts/harness-bug.sh + skill harness-bug-report).
+#   auto → reporta solo, tras las verificaciones deterministas (recomendado)
+#   off  → nunca publica nada hacia afuera; el hallazgo se reporta al humano
+# Nunca viajan valores de secretos: el cuerpo se redacta antes de publicar,
+# hay dedupe por fingerprint y cuota de 3 issues por 24h.
+upstream_issues: {{UPSTREAM_ISSUES}}
+
 # Autonomía de /auto (ticket o prompt → producción, sin intervención):
 #   full       → nunca pausa; gates + canary + rollback son la red
 #   checkpoint → UNA pausa: resumen antes del primer ship a main
@@ -41,11 +50,13 @@ loop_budget: {{LOOP_BUDGET}}
 # supuestos). Para conducir fase por fase: comandos sueltos, no /auto.
 autonomy: {{AUTONOMY}}
 
-# MinionS (docs/harness/minions-decomposition.md, opt-in): el supervisor
-# descompone en sub-preguntas y workers baratos las responden EN PARALELO; el
-# supervisor sintetiza. No es "elegir modelo barato": es descomposición +
-# fan-out. Default off; cámbialo a true y compara el gasto del architect.
-minion_decompose: false
+# MinionS (docs/harness/minions-decomposition.md): el supervisor descompone en
+# sub-preguntas y workers baratos las responden EN PARALELO; el supervisor
+# sintetiza. No es "elegir modelo barato": es descomposición + fan-out, y es lo
+# que mantiene al architect como un HILO FINO (juicio, no lectura).
+#   auto  → ON en standard/full, OFF en express (recomendado)
+#   true  → siempre; false → nunca (el architect lee y razona monolítico)
+minion_decompose: auto
 
 # Orden de shipping: dependencias primero. Verificado por el arquitecto
 # en cada plan; ship.sh no lo impone (los contratos expand/contract lo
@@ -92,8 +103,8 @@ secrets:
   source: {{SECRETS_SOURCE}}   # vault | gcp-secret-manager | env
   refs:
 {{SECRETS_REFS}}
-#    - env://GH_TOKEN
-#    - vault://corvux/harness/argocd
+#    - env://<NOMBRE_DE_LA_VARIABLE>
+#    - vault://<proyecto>/harness/argocd
 
 tickets:
   provider: {{TICKETS_PROVIDER}}   # linear | github | none

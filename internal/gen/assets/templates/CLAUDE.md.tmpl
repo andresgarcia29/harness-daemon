@@ -35,6 +35,9 @@ Dirección de dependencias (ley, referencia del DAG de shipping):
 5. **Trailer `Task: <id>` en todo commit** — gate en ship.sh.
 6. **Presupuestos**: máx {{LOOP_BUDGET}} iteraciones por loop; RFC máx
    2 rondas. Agotado → humano.
+6b. **Piensa hondo en el plan, no en el loop**: planes, síntesis de RFC
+   y ADRs van en **ultrathink** y sin decisiones abiertas
+   (`scripts/plan-lint.sh`); antes de review, `ship.sh --precheck` verde.
 7. **Decisiones fuera de `docs/` NO EXISTEN.** Lo decidido en chat se
    propone como ADR o se perdió.
 8. **Builds pesados serializados** (economía de CPU) — `docker
@@ -55,6 +58,14 @@ Dirección de dependencias (ley, referencia del DAG de shipping):
 11. **Prohibido el guion largo "—"** en todo texto que produzcas
    (docs, reportes, commits, specs): delata texto de IA. Usa coma, dos
    puntos o paréntesis. (El "──" de cajas de terminal es otro carácter.)
+12. **Un bug del HARNESS se verifica y se reporta upstream, siempre.**
+   Si un artefacto del plugin (scripts/, hooks, comandos, gates, panel)
+   falla o contradice lo que documenta: repro mínimo dos veces con
+   `bash -c`, descartar que sea tuyo o versión vieja, y
+   `scripts/harness-bug.sh report` abre el issue en el repo del plugin
+   (redacta secretos, deduplica, cuota 3/24h). Rodearlo con un
+   workaround silencioso condena al siguiente usuario. Protocolo
+   completo: `.claude/skills/harness-bug-report/SKILL.md`.
 
 ## Pipeline (detalle: docs/harness/pipeline.md)
 

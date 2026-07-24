@@ -18,15 +18,40 @@ resuelta en `tasks/<id>/assumptions.md`.
 /feature (intake)          valida el ticket o lo rebota (needs-spec)
    ↓ tasks/<id>/task.md + CARRIL (express | standard | full, por blast radius)
 /rfc                       solo standard/full · abogados SOLO si hay frontera cruzada
-   ↓ tasks/<id>/plan.md + beads (DAG)      [express: mini-plan del orquestador, salta aquí]
+                           architect = hilo fino en ultrathink: probes en paralelo, no lectura
+   ↓ plan.md (bloques ### T<n>) + delta-spec + beads · plan-lint.sh en verde
+   ↓                                       [express: mini-plan del orquestador, salta aquí]
 /implement                 worktrees + briefs YA prefetcheados · implementers en paralelo
-   ↓ commits con trailer Task: <id>
-/review                    reviewer ∥ qa EN PARALELO · re-review incremental en rondas ≥2
+   ↓ commits con trailer Task: <id> · ship.sh --precheck VERDE (gates mecánicos, $0)
+/review                    reviewer ∥ qa EN PARALELO · lista de blocking COMPLETA en ronda 1
    ↓ verdict: pass + qa: pass
 /ship                      ship.sh: rebase→trailer→lane en serie; el resto de gates EN PARALELO
    ↓ 🟢 siguiente tarea del DAG   |   🔴 ROLLBACK PRIMERO, diagnóstico después
 ticket-close.sh            comenta evidencia y cierra el ticket
 ```
+
+## Las tres reglas contra la re-iteración
+
+Sacar algo a producción se vuelve lento por vueltas, no por pasos. Las
+tres piezas que las recortan, en el orden en que actúan:
+
+1. **Pensar hondo una vez, en el plan.** Todo artefacto de planeación
+   (plan del architect, síntesis del RFC, mini-plan express, ADRs) se
+   escribe en modo **ultrathink**. El loop de edición NO: ahí el valor
+   está en el diff, y pensar de más es latencia comprada.
+2. **Un plan sin huecos.** `scripts/plan-lint.sh <id>` exige, por tarea,
+   repo/req/archivos/criterios/complexity/deps, cero decisiones abiertas
+   y que cada `req` exista en el delta-spec. Lo que el plan no decide lo
+   decide un implementer a ciegas, y eso vuelve como blocking.
+3. **Lo mecánico antes que el juicio.** `ship.sh --precheck <id> <repo>`
+   corre los gates del ship (build, tests, lint, gitleaks,
+   tests-no-debilitados) sobre el worktree, sin veredicto ni push. El
+   reviewer no se lanza en rojo: un test roto no vale una ronda de
+   10-20 minutos. Un precheck rojo NO consume presupuesto de loop.
+
+Y la regla del reviewer que las cierra: **la ronda 1 es exhaustiva**. Los
+blocking se entregan todos juntos; lo que no impide shippear va a
+`non_blocking` y de ahí a un bead, jamás a otra ronda.
 
 ## Carriles (ver docs/harness/intake.md)
 
@@ -46,7 +71,7 @@ es barato y conserva el worktree.
 | Orquestador | la sesión principal (o /auto) | — | orquesta, no implementa |
 | Intake | /feature (o el paso 0 de /auto) | {{MODEL_MECHANICAL}} | rebota ambigüedad; en /auto la resuelve con evidencia y la declara |
 | Abogados | agentes de cluster (svc-*, infra, frontends) | {{MODEL_ARCHITECT}} | responden UNA vez, JSON; no implementan |
-| Arquitecto | agente architect | {{MODEL_ARCHITECT}} | máx 2 rondas de RFC; produce plan+beads |
+| Arquitecto | agente architect | {{MODEL_ARCHITECT}} + ultrathink | hilo fino: probes, no lectura cruda; máx 2 rondas de RFC y 2 de probes; produce plan+beads |
 | Implementer | agente implementer (por tarea) | {{MODEL_IMPLEMENTER}} | un worktree, un repo, un scope |
 | Reviewer | agente reviewer | {{MODEL_REVIEWER}} | veredicto JSON; blocking con remediación |
 | QA | agente qa | {{MODEL_IMPLEMENTER}} | ejercita criterios, no opina de código |
@@ -55,8 +80,10 @@ es barato y conserva el worktree.
 ## Artefactos por tarea (`tasks/<id>/`)
 
 `task.md` (ticket materializado, o redactado por /auto desde un prompt) ·
-`assumptions.md` (ledger de supuestos — solo /auto) · `plan.md` (del
-arquitecto) · `verdict-<repo>.json` (reviewer+qa) · `ship.log` ·
+`assumptions.md` (ledger de supuestos, solo /auto) · `probes.json` +
+`probes/*.md` (la descomposición del architect y sus respuestas citadas) ·
+`plan.md` (del arquitecto) · `precheck-<repo>.json` (gates mecánicos
+antes del review) · `verdict-<repo>.json` (reviewer+qa) · `ship.log` ·
 `deploy-<repo>.log`. Estado en ARCHIVOS, no en conversación: cualquier
 sesión puede retomar (`/auto <task-id>`).
 
@@ -73,8 +100,12 @@ supuesto que resultó falso se vuelve una regla para que el siguiente
 ## Presupuestos (Ley 6)
 
 - Loop implementer↔reviewer: máx {{LOOP_BUDGET}} iteraciones → humano.
-- RFC: 1 ronda normal, 2 máximo → humano.
+  Las vueltas por precheck rojo NO cuentan: el reviewer no vio nada.
+- RFC: 1 ronda normal, 2 máximo → humano. Probes: 2 rondas máximo.
 - Sesiones cortas y desechables por tarea; nunca llegar a compactación.
+- La métrica que se vigila: `review_rounds` en `tasks/<id>/state.json` y
+  los blocking marcados `[tardío]`. Tarea de una sola ronda = plan bien
+  hecho; tres rondas = el plan delegó una decisión que le tocaba.
 
 ## Memoria
 

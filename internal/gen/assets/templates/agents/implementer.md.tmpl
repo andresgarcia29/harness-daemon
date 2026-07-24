@@ -21,11 +21,21 @@ heredas conversaciones.
 3. Implementa con tests. Los criterios de aceptación de tu tarea son la
    definición de terminado.
 4. Commits con trailer `Task: <task-id>` (ship.sh lo verifica como gate).
-5. Al terminar, marca tu bead (`bd close`) y solicita review. NO
-   pushees: la única puerta a main es scripts/ship.sh (un hook bloquea
-   el resto).
-6. Si el reviewer regresa `fail`, corrige SOLO los items `blocking`.
-   Tras {{LOOP_BUDGET}} intentos, para y escala a humano.
+5. **Antes de entregar, corre `scripts/ship.sh --precheck <task-id>
+   <repo>`**: son los MISMOS gates mecánicos del ship (build, tests,
+   lint, gitleaks, tests-no-debilitados) sobre tu worktree, sin
+   veredicto y sin push. Rojo lo arreglas tú AHÍ: cuesta segundos y
+   cero tokens, mientras que descubrirlo en review cuesta una ronda
+   entera de reloj. Entregar en rojo es regalar una iteración. Si tras 2
+   intentos el precheck sigue rojo, para y escala con el error completo:
+   un gate que no cede en dos pasadas no cede en la tercera (Ley 6).
+6. Con el precheck verde, marca tu bead (`bd close`) y solicita review.
+   NO pushees: la única puerta a main es scripts/ship.sh (un hook
+   bloquea el resto).
+7. Si el reviewer regresa `fail`, corrige SOLO los items `blocking`,
+   TODOS en una sola pasada (vienen con su remediación), corre el
+   precheck otra vez y devuelve. Tras {{LOOP_BUDGET}} intentos, para y
+   escala a humano.
 
 ## Prohibido
 - Tocar repos fuera de tu worktree (hook guard-canonical te bloquea el

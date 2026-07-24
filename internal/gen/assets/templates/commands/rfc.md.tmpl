@@ -13,18 +13,24 @@ tasks/$ARGUMENTS/task.md).
    `scripts/repo-brief.sh <repo>` por repo, `scripts/graph-refresh.sh`
    (grafo al día para las queries del architect) y warmup de deps —
    para que los implementers arranquen con la mesa puesta.
-1c. **Descomposición MinionS (SOLO si `minion_decompose: true` —
-   docs/harness/minions-decomposition.md)**: en vez de que el architect lea
-   todo y razone monolítico, (a) el architect (supervisor) emite
+1c. **Descomposición MinionS** (`minion_decompose` en harness-answers.yaml;
+   default `auto` = ON en standard/full, OFF en express; ver
+   docs/harness/minions-decomposition.md). Es lo PRIMERO que hace el
+   architect del paso 2, antes de razonar nada: en vez de leer todo y
+   razonar monolítico, (a) el architect (supervisor) emite
    `tasks/<id>/probes.json` con sub-preguntas ACOTADAS y con scope
    (files/repo/graph) — esa descomposición es su acto inteligente; (b) corre
    `scripts/minion-probe.sh <task> tasks/<id>/probes.json`: workers baratos
    responden CADA una EN PARALELO viendo solo su trozo, citando fuente; (c) el
    architect SINTETIZA el plan sobre el pack (`tasks/<id>/probes/*.md`),
    gastando sus tokens caros en juicio, no en lectura. `DESCONOCIDO` en una
-   respuesta = tira de la fuente cruda. Si la bandera está off, el architect
-   lee y razona como siempre.
-2. **Lanza al agente `architect`** para redactar la propuesta RFC:
+   respuesta = tira de la fuente citada, solo de esa. Máximo 2 rondas de
+   probes; si al cerrar la segunda sigue faltando un hecho que cambia el
+   plan, es parada de diseño, no material para adivinar.
+2. **Lanza al agente `architect`** para redactar la propuesta RFC. Su
+   prompt de arranque empieza con la palabra **ultrathink**: el plan es
+   el artefacto que N implementers ejecutan sin poder preguntar, y es el
+   único punto del pipeline donde pensar de más sale barato. Contenido:
    scope, repos, cambios de contrato (diffs de proto), riesgos, y el
    **delta-spec**: contra las specs maestras (`specs/<capability>/`),
    secciones `## ADDED / MODIFIED / REMOVED Requirements` en notación
@@ -44,7 +50,10 @@ tasks/$ARGUMENTS/task.md).
    escala al humano con las posiciones en limpio. Árbitro de
    contratos: el repo proto, expand/contract siempre.
 5. **Plan** → `tasks/$ARGUMENTS/plan.md` + `delta-spec.md` + beads
-   (`bd create` con deps y ref al ticket): tareas por repo, DAG de
+   (`bd create` con deps y ref al ticket), en el formato de bloques
+   `### T<n>` que exige `.claude/agents/architect.md`: una entrega es
+   **la rebanada más chica shippeable** (lo demás son beads de
+   seguimiento, no tareas de esta), tareas por repo, DAG de
    shipping, **cada tarea referencia los requirement IDs del delta que
    satisface** (trazabilidad req→task→test), complexity (low|high — la
    usa la escalación de models.yaml), forecast de tamaño de review
@@ -59,6 +68,11 @@ tasks/$ARGUMENTS/task.md).
    tarea toca tests**, la entrada MODIFIED/REMOVED del delta-spec
    NOMBRA los archivos de test afectados: gate_tests_untouched exige
    esa declaración por archivo.
+5b. **`scripts/plan-lint.sh $ARGUMENTS`** (determinista, $0). Verifica
+   que cada tarea trae repo/req/archivos/criterios/complexity/deps, que
+   no quedaron decisiones abiertas y que cada `req` existe en el
+   delta-spec. **Rojo no pasa a implement**: el architect lo corrige
+   ahí mismo. Es la única revisión del plan que no cuesta una ronda.
 6. Decisiones que sobreviven el RFC → borrador de ADR en docs/adr/.
 7. Cierra con el resumen al humano y sugiere: `/implement $ARGUMENTS`.
 
