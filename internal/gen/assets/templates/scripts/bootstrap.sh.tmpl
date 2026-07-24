@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # bootstrap.sh — onboarding del harness en UNA pasada, idempotente.
 # Instala/verifica las dependencias ELEGIDAS en la entrevista, pide el
-# token de secretos (fuera del chat), materializa .secrets y corre el
-# doctor. Se puede correr N veces: solo actúa sobre lo que falta.
+# token de secretos (fuera del chat), materializa .secrets, construye el
+# grafo de código y corre el doctor. Se puede correr N veces: solo actúa
+# sobre lo que falta.
 #
 # Uso: bootstrap.sh [--check] [--skip-secrets]
 #   --check         solo reporta qué falta, no instala nada
@@ -131,6 +132,23 @@ TOKHELP
   if [ -x "$WS/scripts/secrets.sh" ]; then
     bash "$WS/scripts/secrets.sh" pull || warn "no pude materializar .secrets — revisa el token/red y re-corre scripts/secrets.sh pull"
   fi
+fi
+
+# ── grafo de código ───────────────────────────────────────────────────
+# El grafo se construye AQUÍ, no la primera vez que un agente pregunta. Los
+# prompts dicen "usa graphify query, no grep masivo": contra un grafo que no
+# existe, esa query falla y el agente cae a grep, pagando justo los tokens
+# que el grafo venía a ahorrar, y encima en medio de una tarea. El build
+# inicial tarda minutos y es de una sola vez (después, refresh incremental
+# por HEADs). Fail-open: sin graphify elegido, silencio.
+if [ "$CHECK" -eq 0 ] && [ -x "$WS/scripts/graph-refresh.sh" ] && command -v graphify >/dev/null 2>&1; then
+  echo "══ bootstrap: grafo de código ══"
+  bash "$WS/scripts/graph-refresh.sh" \
+    || warn "no pude construir el grafo; corre 'make graph' antes de la primera tarea"
+elif [ "$CHECK" -eq 1 ] && command -v graphify >/dev/null 2>&1; then
+  [ -f "$WS/graphify-out/graph.json" ] || [ -f "$WS/repos/graphify-out/graph.json" ] \
+    && ok "grafo de graphify construido" \
+    || warn "graphify sin grafo: el bootstrap lo construiría (o corre: make graph)"
 fi
 
 # ── veredicto ─────────────────────────────────────────────────────────

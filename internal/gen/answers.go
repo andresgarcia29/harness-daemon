@@ -30,13 +30,16 @@ type Answers struct {
 		Implementer string `json:"implementer"`
 		Mechanical  string `json:"mechanical"`
 	} `json:"models"`
-	LoopBudget      int       `json:"loop_budget"`
-	MinionDecompose bool      `json:"minion_decompose"`
-	Autonomy        string    `json:"autonomy"` // full | checkpoint
-	DAG             []string  `json:"dag"`
-	Clusters        []Cluster `json:"clusters"`
-	Capabilities    []CapSel  `json:"capabilities"`
-	Secrets         struct {
+	LoopBudget      int    `json:"loop_budget"`
+	MinionDecompose bool   `json:"minion_decompose"`
+	Autonomy        string `json:"autonomy"` // full | checkpoint
+	// UpstreamIssues — el canal de vuelta al plugin: auto (el agente verifica
+	// y levanta el issue en harness-creator) | off (nada sale de la máquina).
+	UpstreamIssues string    `json:"upstream_issues,omitempty"` // auto | off
+	DAG            []string  `json:"dag"`
+	Clusters       []Cluster `json:"clusters"`
+	Capabilities   []CapSel  `json:"capabilities"`
+	Secrets        struct {
 		Source    string   `json:"source"`
 		Refs      []string `json:"refs"`
 		VaultAddr string   `json:"vault_addr,omitempty"`
@@ -107,6 +110,9 @@ func (a *Answers) Validate() error {
 	}
 	if a.Autonomy != "" && !oneOf(a.Autonomy, "full", "checkpoint") {
 		bad("autonomy", a.Autonomy)
+	}
+	if a.UpstreamIssues != "" && !oneOf(a.UpstreamIssues, "auto", "off") {
+		bad("upstream_issues", a.UpstreamIssues)
 	}
 	if a.LoopBudget < 0 || a.LoopBudget > 10 {
 		bad("loop_budget", fmt.Sprint(a.LoopBudget))
@@ -204,6 +210,7 @@ func SeedAnswers(inv *Inventory, wsPath string, overrides map[string]string) *An
 	a.Models.Mechanical = "fast"   // lo especificisimo: digest, triage (Sonnet)
 	a.LoopBudget = 3
 	a.Autonomy = "checkpoint"
+	a.UpstreamIssues = "auto"
 	a.Clusters = SeedClusters(inv, overrides)
 	a.DAG = SeedDAG(inv, overrides)
 	if len(inv.SecretHints) > 0 {

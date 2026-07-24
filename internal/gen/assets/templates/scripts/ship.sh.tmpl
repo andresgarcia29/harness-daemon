@@ -3,6 +3,16 @@
 # este script decide. Determinista, cero tokens en el camino verde.
 #
 # Uso: ship.sh <task-id> <repo>
+#      ship.sh --precheck <task-id> <repo>
+#
+# --precheck corre los MISMOS gates mecánicos (lenguaje, seguridad, tests no
+# debilitados) sobre el worktree, SIN veredicto, sin lock y sin push. Existe
+# por una razón de velocidad medida: un review que se cae por un test roto o
+# un lint quema una ronda completa de reviewer (10-20 min de reloj) para
+# decir lo que un script dice en segundos y gratis. El implementer lo corre
+# antes de entregar; /review no lanza a nadie si el precheck no está verde.
+# Deja el sello en tasks/<task>/precheck-<repo>.json (commit + ok).
+#
 # Opera sobre el WORKTREE de la tarea (worktrees/<task>/<repo>), nunca
 # sobre el clon canónico. Serie solo lo que tiene orden real:
 # rebase → trailer → carril. Después, los gates independientes corren EN
@@ -14,8 +24,10 @@
 # Portabilidad: bash 3.2 (macOS), BSD grep. Sin flock (lock por mkdir).
 set -euo pipefail
 
-TASK="${1:?uso: ship.sh <task-id> <repo>}"
-REPO="${2:?uso: ship.sh <task-id> <repo>}"
+PRECHECK=0
+if [ "${1:-}" = "--precheck" ]; then PRECHECK=1; shift; fi
+TASK="${1:?uso: ship.sh [--precheck] <task-id> <repo>}"
+REPO="${2:?uso: ship.sh [--precheck] <task-id> <repo>}"
 WS="$(cd "$(dirname "$0")/.." && pwd)"
 WT="$WS/worktrees/$TASK/$REPO"
 BASE="$WS/repos/$REPO"
@@ -43,11 +55,29 @@ gate() {
 # imprime la instrucción de autocorrección (el agente que lee esto
 # arregla en una iteración, sin adivinar). También libera el lock.
 CURRENT_GATE="preflight"; LOCK_HELD=""
+stamp_precheck() {  # stamp_precheck <ok:true|false>: sello que /review lee
+  local ok="$1" head
+  head="$(git -C "$WT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  printf '{"schema":1,"task_id":"%s","repo":"%s","commit":"%s","ok":%s,"at":"%s"}\n' \
+    "$TASK" "$REPO" "$head" "$ok" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    > "$WS/tasks/$TASK/precheck-$REPO.json"
+}
 on_exit() {
   local rc=$?
   [ -n "$LOCK_HELD" ] && rm -rf "$LOCKDIR"
   if [ "$rc" -eq 0 ]; then
     [ -n "${CURRENT_GATE:-}" ] && emit gate "$CURRENT_GATE" true
+    return 0
+  fi
+  if [ "$PRECHECK" -eq 1 ]; then
+    stamp_precheck false
+    emit gate "precheck de $REPO rojo ($CURRENT_GATE): ronda de review AHORRADA" false
+    echo ""
+    echo "⛔ precheck rojo en '$CURRENT_GATE' (exit $rc). NO entregues a review."
+    echo "   → Los errores completos están arriba. Corrígelos TODOS en una"
+    echo "     iteración (el error de cada gate trae su remediación) y re-corre"
+    echo "     scripts/ship.sh --precheck $TASK $REPO."
+    echo "   → Esto NO consume presupuesto de loop: el reviewer todavía no vio nada."
     return 0
   fi
   # UN GATE QUE BLOQUEA ES LA MEJOR NOTICIA DEL SISTEMA: es la prueba de que el
@@ -428,11 +458,18 @@ run_parallel_gates() {
   CURRENT_GATE=""
   GDIR="$(mktemp -d "${TMPDIR:-/tmp}/ship-gates.XXXXXX")"
   PAR_PIDS=""; PAR_SLOTS=""
-  echo "── gates en paralelo: lang ∥ security ∥ tests ∥ veredicto ──"
+  # En precheck no hay veredicto todavía (ese es justamente el punto: correr
+  # lo mecánico ANTES de gastar una ronda de reviewer). El resto es idéntico:
+  # mismo código, mismos umbrales, mismas remediaciones.
+  if [ "${PRECHECK:-0}" -eq 1 ]; then
+    echo "── gates en paralelo: lang ∥ security ∥ tests (sin veredicto: precheck) ──"
+  else
+    echo "── gates en paralelo: lang ∥ security ∥ tests ∥ veredicto ──"
+  fi
   par lang      run_lang_gates
   par security  run_security_gates
   par tests     gate_tests_untouched
-  par veredicto check_verdict gate_evidence gate_policy_and_evidence
+  [ "${PRECHECK:-0}" -eq 1 ] || par veredicto check_verdict gate_evidence gate_policy_and_evidence
   local pid; for pid in $PAR_PIDS; do wait "$pid" 2>/dev/null || true; done
   local slot rc failed=""
   for slot in $PAR_SLOTS; do
@@ -448,6 +485,22 @@ run_parallel_gates() {
     exit 3
   fi
 }
+
+# ── Precheck: los gates mecánicos ANTES de gastar una ronda de review ─
+# Sin lock (no toca main), sin rebase (no reescribe la historia del
+# implementer) y sin veredicto. Solo responde una pregunta: ¿este worktree
+# pasaría hoy los gates que no dependen de juicio humano ni de review?
+if [ "$PRECHECK" -eq 1 ]; then
+  cd "$WT"
+  git fetch origin --quiet 2>/dev/null || true   # fail-open: sin red, compara contra el origin/main local
+  echo "══ precheck $REPO (task $TASK) ══"
+  run_parallel_gates
+  stamp_precheck true
+  emit gate "precheck de $REPO verde, listo para review" true
+  echo "✅ precheck verde. Sello: tasks/$TASK/precheck-$REPO.json"
+  echo "→ siguiente: /review $TASK $REPO"
+  exit 0
+fi
 
 # ── Loop de ship ──────────────────────────────────────────────────────
 acquire_lock

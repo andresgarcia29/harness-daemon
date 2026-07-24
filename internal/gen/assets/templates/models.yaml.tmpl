@@ -101,9 +101,27 @@ roles:
   # worker: el tier que RESPONDE sub-preguntas acotadas en paralelo bajo un
   # supervisor (deep). NO es "un modelo más barato para ahorrar": es el trozo
   # ejecutor del patrón MinionS (arXiv:2502.15964) donde el supervisor
-  # descompone y muchos workers responden en paralelo. OPT-IN: solo se usa si
-  # minion_decompose=true (docs/harness/minions-decomposition.md). Default = fast.
+  # descompone y muchos workers responden en paralelo. Activo por carril
+  # (minion_decompose: auto = standard/full sí, express no;
+  # docs/harness/minions-decomposition.md). Default = fast.
   worker: {{MODEL_MECHANICAL}}
+
+# ── profundidad de razonamiento: dónde se piensa hondo ────────────────
+# El modelo es UNA perilla; el esfuerzo de pensamiento es OTRA, y son
+# independientes. En Claude Code la palabra `ultrathink` en el prompt de
+# arranque sube el presupuesto de razonamiento de esa invocación (en
+# proveedores que no la soportan es texto inocuo: no rompe nada).
+#
+# LEY: ultrathink va donde se produce un artefacto de RAZONAMIENTO que otros
+# ejecutan sin poder preguntar. Ahí un minuto extra de pensar evita rondas:
+#   · el plan y el delta-spec (architect, y el mini-plan express que escribe
+#     el orquestador: express recorta sesiones, no profundidad)
+#   · la síntesis del RFC y el arbitraje entre abogados
+#   · los ADR y las escalaciones (re-pensar un atasco, no teclear más rápido)
+#
+# Y NO va donde el output es ejecución: implementer, reviewer, qa, merges
+# mecánicos, cronjobs baratos. Pensar donde no hay decisión es latencia
+# comprada, y el loop de edición es justo donde más duele.
 
 # ── excepciones por agente ────────────────────────────────────────────
 # Una línea por excepción: <archivo de .claude/agents/ sin .md>: <alias>.

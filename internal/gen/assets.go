@@ -41,27 +41,44 @@ type SecretRef struct {
 	Key    string `json:"key"`
 	Source string `json:"source"`
 }
+
+// CapConfig — entrada de .mcp.json. Dos formas: LOCAL (stdio: command+args,
+// envolvible en with-secrets.sh) y REMOTA (type http|sse + url, sin wrap: el
+// auth es OAuth del cliente). El catálogo trae las dos desde que existe el
+// MCP oficial de Meta; asumir solo la local escribía {"command":""}.
 type CapConfig struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Type    string   `json:"type,omitempty"`
+	URL     string   `json:"url,omitempty"`
 }
 type Capability struct {
-	Name           string      `json:"name"`
-	Category       string      `json:"category"`
-	Purpose        string      `json:"purpose"`
-	Provider       string      `json:"provider"` // cli | mcp | script
-	Bin            string      `json:"bin,omitempty"`
-	Mcp            string      `json:"mcp,omitempty"`
-	Config         *CapConfig  `json:"config,omitempty"`
-	Wrap           bool        `json:"wrap,omitempty"`
-	Install        string      `json:"install,omitempty"`
-	PermissionTier string      `json:"permission_tier,omitempty"`
-	Profiles       []string    `json:"profiles,omitempty"`
-	Detect         string      `json:"detect,omitempty"`
-	Secrets        []SecretRef `json:"secrets,omitempty"`
-	Phase          int         `json:"phase,omitempty"`
-	Cronjob        string      `json:"cronjob,omitempty"`
-	Note           string      `json:"note,omitempty"`
+	Name     string     `json:"name"`
+	Category string     `json:"category"`
+	Purpose  string     `json:"purpose"`
+	Provider string     `json:"provider"` // cli | mcp | script
+	Bin      string     `json:"bin,omitempty"`
+	Mcp      string     `json:"mcp,omitempty"`
+	Config   *CapConfig `json:"config,omitempty"`
+	Wrap     bool       `json:"wrap,omitempty"`
+	Install  string     `json:"install,omitempty"`
+	// InstallKind decide ensure (auto) vs require (manual). Es un DATO del
+	// catálogo, no una inferencia sobre el texto de Install: inferirlo dejaba
+	// sin instalar todo lo que no fuera brew (harness-creator#23).
+	InstallKind string `json:"install_kind,omitempty"`
+	InstallAlt  string `json:"install_alt,omitempty"`
+	// Override por plataforma: una fórmula de brew sin bottle de Linux deja la
+	// capacidad en ❌ sin explicación (harness-creator#24).
+	InstallLinux     string      `json:"install_linux,omitempty"`
+	InstallLinuxKind string      `json:"install_linux_kind,omitempty"`
+	PostInstall      string      `json:"post_install,omitempty"`
+	PermissionTier   string      `json:"permission_tier,omitempty"`
+	Profiles         []string    `json:"profiles,omitempty"`
+	Detect           string      `json:"detect,omitempty"`
+	Secrets          []SecretRef `json:"secrets,omitempty"`
+	Phase            int         `json:"phase,omitempty"`
+	Cronjob          string      `json:"cronjob,omitempty"`
+	Note             string      `json:"note,omitempty"`
 }
 
 var (

@@ -1,0 +1,39 @@
+# .gitignore del workspace, generado por harness-creator.
+# Regla: el harness versiona CONFIG, DOCS, AGENTES y LEYES. Todo lo de aquí
+# es regenerable, derivable o local a esta máquina. Esta lista es canónica:
+# vive en templates/gitignore.tmpl del plugin y tests/test_docs.sh la vigila
+# (antes era prosa dentro de una tabla y se divergió en los dos sentidos,
+# issue #27).
+
+# Clones canónicos: la lista de verdad es manifest.yaml
+repos/
+# Una tarea = un worktree por repo; se crean y se tiran
+worktrees/
+# Semáforos de ship.sh y build-slot.sh
+locks/
+# Dumps de quiet.sh, briefs, CPython de py.sh, corepack de fe.sh, stamps
+.cache/
+
+# Valores de secretos: JAMÁS al repo
+.secrets
+.secrets.d/
+
+# Lo regenera scripts/discover.sh
+inventory.json
+
+# Lo genera scripts/gowork.sh con rutas ABSOLUTAS de esta máquina:
+# versionarlo rompe cualquier otro clon
+go.work
+go.work.sum
+
+# El grafo es derivable del código y pesa cientos de MB en un workspace
+# grande (128 MB con 28 repos): un `git add -A` se lo lleva entero
+graphify-out/
+repos/graphify-out/
+
+# Bus de eventos y procedencia sesión→tarea: telemetría local
+.harness/
+
+# Estado por tarea, local a la máquina que la corrió. Lo que debe sobrevivir
+# a la tarea se destila a docs/ en /archive: si no está en docs/, no existe
+tasks/
