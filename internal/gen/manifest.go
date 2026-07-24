@@ -71,12 +71,16 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	add(GenFile{Src: "AGENTS.md.tmpl", Dst: "AGENTS.md", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "skills/skill-creator/SKILL.md", Dst: ".claude/skills/skill-creator/SKILL.md", Mode: reg, When: always})
 	add(GenFile{Src: "skills/pipeline-step-creator/SKILL.md", Dst: ".claude/skills/pipeline-step-creator/SKILL.md", Mode: reg, When: always})
+	add(GenFile{Src: "skills/harness-bug-report/SKILL.md", Dst: ".claude/skills/harness-bug-report/SKILL.md", Mode: reg, When: always})
 	add(GenFile{Src: "skills.yaml.tmpl", Dst: "skills.yaml", Mode: reg, Render: true, When: always, Keep: true})
 	add(GenFile{Src: "manifest.yaml.tmpl", Dst: "manifest.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "harness-answers.yaml.tmpl", Dst: "harness-answers.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Inline: []byte(o.Version + "\n"), Dst: ".harness-version", Mode: reg, When: always})
 	add(GenFile{Src: "Makefile.tmpl", Dst: "Makefile", Mode: reg, Render: true, When: always})
-	add(GenFile{Inline: []byte("repos/\nworktrees/\nlocks/\n.cache/\n.secrets\n.secrets.d/\ninventory.json\n.harness/\ntasks/\n"), Dst: ".gitignore", Mode: reg, When: always})
+	// La lista vive en el template del instalador, no aquí: mientras fue una
+	// copia embebida se divergió y dejó fuera graphify-out/ (128 MB del grafo
+	// entrando a un git add -A), go.work y go.work.sum (harness-creator#27).
+	add(GenFile{Src: "gitignore.tmpl", Dst: ".gitignore", Mode: reg, When: always})
 	add(GenFile{Src: "models.yaml.tmpl", Dst: "models.yaml", Mode: reg, Render: true, When: always})
 	add(GenFile{Src: "policy.json", Dst: "harness-policy.json", Mode: reg, When: always})
 
@@ -155,7 +159,8 @@ func Files(a *Answers, inv *Inventory, o Opts) []GenFile {
 	for _, s := range []string{"worktree-task.sh", "quiet.sh", "with-secrets.sh", "emit.sh",
 		"build-slot.sh", "gowork.sh", "py.sh", "fe.sh",
 		"repo-brief.sh", "stamp-models.sh", "graph-refresh.sh",
-		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "minion-probe.sh", "pipeline-steps.sh"} {
+		"pull-all.sh", "skills-sync.sh", "verdict-scaffold.sh", "minion-probe.sh", "pipeline-steps.sh",
+		"plan-lint.sh", "harness-bug.sh"} {
 		add(GenFile{Src: "scripts/" + s, Dst: "scripts/" + s, Mode: sh, When: always})
 	}
 	// doctor.sh: la copia autocontenida (viene de assets/scripts, no de templates)
@@ -231,6 +236,18 @@ func McpJSON(a *Answers) ([]byte, error) {
 		cap, ok := CapByName(sel.Name)
 		if !ok || cap.Config == nil {
 			return nil, fmt.Errorf("MCP %s sin config en el catálogo", sel.Name)
+		}
+		// remoto: type + url tal cual, sin wrap (no hay comando que envolver)
+		if cap.Config.URL != "" {
+			entry := map[string]any{"url": cap.Config.URL}
+			if cap.Config.Type != "" {
+				entry["type"] = cap.Config.Type
+			}
+			servers[sel.Mcp] = entry
+			continue
+		}
+		if cap.Config.Command == "" {
+			return nil, fmt.Errorf("MCP %s: config sin command ni url en el catálogo", sel.Name)
 		}
 		cmd := cap.Config.Command
 		args := make([]string, 0, len(cap.Config.Args))

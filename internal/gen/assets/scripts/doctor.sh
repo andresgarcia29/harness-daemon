@@ -38,8 +38,21 @@ if [ -f "$WS/manifest.yaml" ] && [ -d "$WS/repos" ]; then
   done
 fi
 
+# 1c · .gitignore: las tres trampas caras. graphify-out/ pesa cientos de MB
+# (128 MB medidos con 28 repos) y el propio flujo invita al accidente
+# (`git init` del workspace + `make graph` + `git add -A`); go.work lo genera
+# gowork.sh con rutas absolutas de ESTA máquina; .secrets son valores. Issue #27.
+if [ -f "$WS/.gitignore" ]; then
+  grep -qxF ".secrets" "$WS/.gitignore" \
+    || fail ".gitignore SIN .secrets" "agrégalo YA: un git add -A commitea valores de secretos"
+  for e in "graphify-out/" "go.work"; do
+    grep -qxF "$e" "$WS/.gitignore" \
+      || warn ".gitignore sin '$e': es regenerable/por-máquina y no debe entrar a git; añádelo (o corre /harness-init . en modo update)"
+  done
+fi
+
 # 2 · Scripts de instancia ejecutables
-for s in ship.sh worktree-task.sh quiet.sh with-secrets.sh emit.sh          build-slot.sh gowork.sh py.sh fe.sh repo-brief.sh          stamp-models.sh graph-refresh.sh pull-all.sh skills-sync.sh          verdict-scaffold.sh minion-probe.sh pipeline-steps.sh; do
+for s in ship.sh worktree-task.sh quiet.sh with-secrets.sh emit.sh          build-slot.sh gowork.sh py.sh fe.sh repo-brief.sh          stamp-models.sh graph-refresh.sh pull-all.sh skills-sync.sh          verdict-scaffold.sh minion-probe.sh pipeline-steps.sh plan-lint.sh          harness-bug.sh; do
   if [ -f "$WS/scripts/$s" ]; then
     [ -x "$WS/scripts/$s" ] && ok "scripts/$s ejecutable" || fail "scripts/$s no ejecutable" "chmod +x scripts/$s"
     bash -n "$WS/scripts/$s" 2>/dev/null && ok "scripts/$s sintaxis válida" || fail "scripts/$s con error de sintaxis" "revisa el archivo (bash -n scripts/$s)"
@@ -109,8 +122,11 @@ fi
 
 # 7 · Secretos: flujo completo, nunca valores
 if [ -f "$ANSWERS" ]; then
-  # referencias env://: presencia de la variable
-  for var in $(grep -oE 'env://[A-Za-z_][A-Za-z0-9_]*' "$ANSWERS" | sed 's|env://||' | sort -u); do
+  # referencias env://: presencia de la variable. Los COMENTARIOS no cuentan:
+  # el grep sobre el archivo entero cazaba el ejemplo comentado del propio
+  # template y todo workspace generado avisaba por una ref que nadie declaró
+  # (issue #26). Se corta desde el # antes de buscar.
+  for var in $(sed 's/#.*//' "$ANSWERS" | grep -oE 'env://[A-Za-z_][A-Za-z0-9_]*' | sed 's|env://||' | sort -u); do
     [ -n "${!var:-}" ] && ok "secreto presente: \$$var" || warn "secreto no presente en entorno: \$$var"
   done
   # fuente vault/gcp-sm: bootstrap (token) y materialización (.secrets)
@@ -158,6 +174,29 @@ if [ -f "$WS/scripts/emit.sh" ]; then
     || warn "ship.sh no sourcea emit.sh — los gates no se cuentan y el panel no puede enseñar cuándo el harness frenó a su propio agente"
 else
   warn "falta scripts/emit.sh — el panel solo verá agentes y tokens (lo que presta Claude Code), nunca tus decisiones ni tus gates; corre /harness-init . (modo update)"
+fi
+
+# 8a-ter · El canal de vuelta al plugin (ley 12): un bug del harness que muere
+# en la máquina de un usuario se lo come el siguiente usuario igual. El script
+# es el filtro determinista (propiedad, drift, versión, dedupe, cuota,
+# redacción); la skill es el juicio. Sin gh, el canal no publica.
+upstream_mode="auto"
+[ -f "$ANSWERS" ] && upstream_mode="$(grep -E '^upstream_issues:' "$ANSWERS" | head -1 | awk '{print $2}')"
+[ -n "$upstream_mode" ] || upstream_mode="auto"
+if [ "$upstream_mode" = "off" ]; then
+  ok "reportes upstream deshabilitados por decisión de la instancia (upstream_issues: off)"
+else
+  if [ -f "$WS/.claude/skills/harness-bug-report/SKILL.md" ]; then
+    ok "skill harness-bug-report presente (verifica antes de reportar)"
+  else
+    warn "falta .claude/skills/harness-bug-report/SKILL.md: sin ella los agentes reportan sin verificar (o no reportan); corre /harness-init . (modo update)"
+  fi
+  command -v gh >/dev/null 2>&1 \
+    || warn "gh ausente, harness-bug.sh no puede abrir el issue upstream; el reporte queda solo en --dry-run"
+  if [ -f "$WS/.harness/upstream-issues.jsonl" ]; then
+    nrep=$(wc -l < "$WS/.harness/upstream-issues.jsonl" | tr -d ' ')
+    ok "$nrep reporte(s) upstream desde esta instancia (scripts/harness-bug.sh list)"
+  fi
 fi
 
 # 8b · Presupuesto de contexto SIEMPRE inyectado.
@@ -311,11 +350,26 @@ if command -v bd >/dev/null 2>&1; then
     warn "bd instalado pero 'bd ready --json' falla en el workspace — inicializa beads (bd init) o el pipeline no puede ordenar el DAG"
   fi
 fi
+# El mensaje prometía "graphify query responde de verdad" y solo comprobaba
+# que el ARCHIVO existiera: un graph.json de 176 bytes con 0 nodos pasaba como
+# sano mientras los agentes consultaban una fuente vacía (issue #25). Se
+# cuentan nodos: si la afirmación es "responde", que lo compruebe.
 if command -v graphify >/dev/null 2>&1; then
-  if [ -f "$WS/graphify-out/graph.json" ] || [ -f "$WS/repos/graphify-out/graph.json" ]; then
-    ok "grafo de graphify construido (graphify query responde de verdad)"
-  else
+  gfile=""
+  for cand in "$WS/graphify-out/graph.json" "$WS/repos/graphify-out/graph.json"; do
+    [ -f "$cand" ] && { gfile="$cand"; break; }
+  done
+  if [ -z "$gfile" ]; then
     warn "graphify instalado pero SIN grafo — 'graphify query' falla y los agentes caen a grep masivo; corre scripts/graph-refresh.sh (o make graph)"
+  else
+    gnodes="$(jq '.nodes | length' "$gfile" 2>/dev/null)"
+    case "$gnodes" in ''|*[!0-9]*) gnodes=0 ;; esac
+    if [ "$gnodes" -gt 0 ]; then
+      ok "grafo de graphify con $gnodes nodos (graphify query tiene qué responder)"
+    else
+      fail "grafo de graphify VACÍO (0 nodos) pero presente en $(basename "$(dirname "$gfile")")/" \
+           "los agentes creen tener grafo y no lo tienen. Corre: bash scripts/graph-refresh.sh (construye por repo y fusiona) y revisa .cache/graph.log si vuelve a salir vacío"
+    fi
   fi
 fi
 [ -d "$WS/specs" ] && ok "specs/ presente ($(ls "$WS/specs" 2>/dev/null | wc -l | tr -d ' ') capabilities)" || warn "sin specs/ — los abogados litigan sin documento citable"

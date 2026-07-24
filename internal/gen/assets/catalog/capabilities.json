@@ -4,7 +4,9 @@
       "bin": "jq",
       "category": "core",
       "detect": "always",
-      "install": "brew install jq | apt-get install -y jq",
+      "install": "brew install jq",
+      "install_alt": "apt-get install -y jq",
+      "install_kind": "auto",
       "name": "jq",
       "permission_tier": "read-only",
       "profiles": [
@@ -17,7 +19,9 @@
       "bin": "gh",
       "category": "core",
       "detect": "repos con .github/workflows",
-      "install": "brew install gh | https://cli.github.com",
+      "install": "brew install gh",
+      "install_alt": "https://cli.github.com",
+      "install_kind": "auto",
       "name": "gh",
       "permission_tier": "read-write",
       "profiles": [
@@ -39,6 +43,7 @@
       "category": "build",
       "detect": "repos con go.mod",
       "install": "brew install go golangci-lint",
+      "install_kind": "auto",
       "name": "go-toolchain",
       "permission_tier": "read-write",
       "profiles": [
@@ -52,7 +57,9 @@
       "bin": "npm",
       "category": "build",
       "detect": "repos con package.json",
-      "install": "brew install node (o bun)",
+      "install": "brew install node",
+      "install_alt": "brew install oven-sh/bun/bun",
+      "install_kind": "auto",
       "name": "node-toolchain",
       "permission_tier": "read-write",
       "profiles": [
@@ -67,6 +74,7 @@
       "category": "build",
       "detect": "repos con pyproject.toml",
       "install": "brew install uv",
+      "install_kind": "auto",
       "name": "python-toolchain",
       "permission_tier": "read-write",
       "profiles": [
@@ -81,6 +89,7 @@
       "category": "build",
       "detect": "repos con pubspec.yaml",
       "install": "https://docs.flutter.dev/get-started",
+      "install_kind": "manual",
       "name": "flutter-toolchain",
       "permission_tier": "read-write",
       "profiles": [
@@ -95,6 +104,7 @@
       "category": "contracts",
       "detect": "repos con buf.yaml",
       "install": "brew install bufbuild/buf/buf",
+      "install_kind": "auto",
       "name": "buf",
       "permission_tier": "read-only",
       "profiles": [
@@ -110,6 +120,7 @@
       "category": "infra",
       "detect": "repos con charts de Helm o manifests k8s",
       "install": "gcloud components install kubectl",
+      "install_kind": "auto",
       "name": "kubectl",
       "permission_tier": "read-only",
       "profiles": [
@@ -130,6 +141,7 @@
       "category": "infra",
       "detect": "terraform con provider google",
       "install": "brew install --cask gcloud-cli",
+      "install_kind": "auto",
       "name": "gcloud",
       "permission_tier": "read-only",
       "profiles": [
@@ -150,6 +162,7 @@
       "category": "infra",
       "detect": "manifests de ArgoCD",
       "install": "brew install argocd",
+      "install_kind": "auto",
       "name": "argocd",
       "permission_tier": "read-only",
       "profiles": [
@@ -168,8 +181,12 @@
       "bin": "kargo",
       "category": "infra",
       "detect": "manifests de Kargo",
-      "install": "brew install akuity/tap/kargo-cli",
+      "install": "brew install akuity/tap/kargo",
+      "install_kind": "auto",
+      "install_linux": "https://github.com/akuity/kargo/releases/latest",
+      "install_linux_kind": "manual",
       "name": "kargo",
+      "note": "la fórmula de brew solo publica binario macOS; en Linux se baja el asset kargo-linux-amd64 del release (install_linux)",
       "permission_tier": "read-only",
       "profiles": [
         "deployer"
@@ -187,8 +204,11 @@
       "bin": "terraform",
       "category": "infra",
       "detect": "repos con *.tf",
-      "install": "brew install terraform",
+      "install": "brew install hashicorp/tap/terraform",
+      "install_alt": "https://developer.hashicorp.com/terraform/install",
+      "install_kind": "auto",
       "name": "terraform",
+      "note": "salió de homebrew-core con el cambio a BUSL: 'brew install terraform' aborta pidiendo confiar el tap. El path completo lo auto-tapea; confiar un tap sigue siendo decisión del humano",
       "permission_tier": "read-only",
       "profiles": [
         "implementer",
@@ -202,6 +222,7 @@
       "category": "infra",
       "detect": "elegido en entrevista (secrets.source: vault)",
       "install": "brew install hashicorp/tap/vault",
+      "install_kind": "auto",
       "name": "vault",
       "permission_tier": "read-write",
       "profiles": [
@@ -222,6 +243,7 @@
       "category": "quality",
       "detect": "always-recommend",
       "install": "brew install gitleaks",
+      "install_kind": "auto",
       "name": "gitleaks",
       "permission_tier": "read-only",
       "profiles": [
@@ -234,7 +256,9 @@
       "bin": "semgrep",
       "category": "quality",
       "detect": "always-recommend",
-      "install": "brew install semgrep | pip install semgrep",
+      "install": "brew install semgrep",
+      "install_alt": "uv tool install semgrep",
+      "install_kind": "auto",
       "name": "semgrep",
       "permission_tier": "read-only",
       "profiles": [
@@ -250,6 +274,7 @@
       "category": "quality",
       "detect": "repos con package.json",
       "install": "npm i -g dependency-cruiser",
+      "install_kind": "auto",
       "name": "dependency-cruiser",
       "permission_tier": "read-only",
       "profiles": [
@@ -263,7 +288,8 @@
       "bin": "lint-imports",
       "category": "quality",
       "detect": "repos con pyproject.toml",
-      "install": "pip install import-linter",
+      "install": "uv tool install import-linter",
+      "install_kind": "auto",
       "name": "import-linter",
       "permission_tier": "read-only",
       "profiles": [
@@ -278,6 +304,7 @@
       "category": "quality",
       "detect": "repos con go.mod",
       "install": "go install github.com/fe3dback/go-arch-lint@latest",
+      "install_kind": "auto",
       "name": "go-arch-lint",
       "permission_tier": "read-only",
       "profiles": [
@@ -292,6 +319,7 @@
       "category": "quality",
       "detect": "always-recommend",
       "install": "brew install ast-grep",
+      "install_kind": "auto",
       "name": "ast-grep",
       "note": "sin soporte Dart built-in; semgrep/opengrep cubre lo multi-lenguaje",
       "permission_tier": "read-only",
@@ -307,6 +335,7 @@
       "category": "token-economy",
       "detect": "always-recommend",
       "install": "generado por el harness en scripts/",
+      "install_kind": "auto",
       "name": "quiet-wrapper",
       "permission_tier": "read-only",
       "profiles": [
@@ -320,6 +349,7 @@
       "category": "token-economy",
       "detect": "workspace con 5+ repos",
       "install": "uv tool install graphifyy",
+      "install_kind": "auto",
       "name": "graphify",
       "permission_tier": "read-only",
       "post_install": "graphify install",
@@ -336,6 +366,7 @@
       "category": "token-economy",
       "detect": "always-recommend",
       "install": "uv tool install semble",
+      "install_kind": "auto",
       "name": "semble",
       "permission_tier": "read-only",
       "phase": 2,
@@ -351,6 +382,7 @@
       "category": "token-economy",
       "detect": "always-recommend",
       "install": "npm i -g ccusage",
+      "install_kind": "auto",
       "name": "ccusage",
       "permission_tier": "read-only",
       "profiles": [
@@ -436,6 +468,7 @@
       },
       "detect": "always-recommend",
       "install": "brew install gentleman-programming/tap/engram",
+      "install_kind": "auto",
       "mcp": "engram",
       "name": "engram",
       "note": "fijar --project explícito; no derivar del remote",
@@ -598,6 +631,7 @@
       "category": "tracking",
       "detect": "tickets.provider: linear",
       "install": "generado por el harness en scripts/",
+      "install_kind": "auto",
       "name": "linear-bridge",
       "permission_tier": "read-write",
       "profiles": [
@@ -638,6 +672,7 @@
       "category": "tracking",
       "detect": "always-recommend",
       "install": "brew install beads",
+      "install_kind": "auto",
       "name": "beads",
       "permission_tier": "read-write",
       "profiles": [
@@ -653,6 +688,7 @@
       "category": "testing",
       "detect": "repos con go.mod",
       "install": "go install gotest.tools/gotestsum@latest",
+      "install_kind": "auto",
       "name": "gotestsum",
       "permission_tier": "read-only",
       "profiles": [
@@ -667,7 +703,8 @@
       "category": "testing",
       "cronjob": "ratchet-keeper",
       "detect": "always-recommend",
-      "install": "pip install diff-cover",
+      "install": "uv tool install diff-cover",
+      "install_kind": "auto",
       "name": "diff-cover",
       "permission_tier": "read-only",
       "profiles": [
@@ -681,20 +718,22 @@
       "category": "testing",
       "cronjob": "mutation-sentinel",
       "detect": "repos con package.json",
-      "install": "npm i -D @stryker-mutator/core (por repo TS)",
+      "install": "npm i -D @stryker-mutator/core",
+      "install_kind": "manual",
       "name": "stryker",
       "permission_tier": "read-only",
       "phase": 2,
       "profiles": [],
       "provider": "cli",
-      "purpose": "Mutation testing TS incremental (los tests de IA que no protegen, desenmascarados)"
+      "purpose": "Mutation testing TS incremental (los tests de IA que no protegen, desenmascarados). Dev-dep POR REPO TS, no global"
     },
     {
       "bin": "mutmut",
       "category": "testing",
       "cronjob": "mutation-sentinel",
       "detect": "repos con pyproject.toml",
-      "install": "pip install mutmut",
+      "install": "uv tool install mutmut",
+      "install_kind": "auto",
       "name": "mutmut",
       "permission_tier": "read-only",
       "phase": 2,
@@ -708,6 +747,7 @@
       "cronjob": "mutation-sentinel",
       "detect": "repos con go.mod",
       "install": "go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest",
+      "install_kind": "auto",
       "name": "go-mutesting",
       "permission_tier": "read-only",
       "phase": 2,
@@ -720,6 +760,7 @@
       "category": "testing",
       "detect": "servicios gRPC/HTTP",
       "install": "brew install k6",
+      "install_kind": "auto",
       "name": "k6",
       "permission_tier": "read-only",
       "phase": 2,
@@ -735,6 +776,7 @@
       "cronjob": "dead-code-reaper",
       "detect": "repos con package.json",
       "install": "npm i -g knip",
+      "install_kind": "auto",
       "name": "knip",
       "permission_tier": "read-only",
       "profiles": [],
@@ -746,7 +788,8 @@
       "category": "hygiene",
       "cronjob": "dead-code-reaper",
       "detect": "repos con pyproject.toml",
-      "install": "pip install vulture",
+      "install": "uv tool install vulture",
+      "install_kind": "auto",
       "name": "vulture",
       "permission_tier": "read-only",
       "profiles": [],
@@ -759,6 +802,7 @@
       "cronjob": "dead-code-reaper",
       "detect": "repos con go.mod",
       "install": "go install golang.org/x/tools/cmd/deadcode@latest",
+      "install_kind": "auto",
       "name": "deadcode",
       "permission_tier": "read-only",
       "profiles": [],
@@ -771,6 +815,7 @@
       "cronjob": "dead-code-reaper",
       "detect": "always-recommend",
       "install": "npm i -g jscpd",
+      "install_kind": "auto",
       "name": "jscpd",
       "permission_tier": "read-only",
       "phase": 2,
@@ -783,7 +828,9 @@
       "category": "security",
       "cronjob": "dep-shepherd",
       "detect": "always-recommend",
-      "install": "npm i -g renovate (o CronJob oficial self-hosted)",
+      "install": "npm i -g renovate",
+      "install_alt": "CronJob oficial self-hosted (https://docs.renovatebot.com/self-hosting)",
+      "install_kind": "auto",
       "name": "renovate",
       "permission_tier": "read-write",
       "profiles": [],
@@ -802,6 +849,7 @@
       "cronjob": "vuln-watch",
       "detect": "always-recommend",
       "install": "brew install osv-scanner",
+      "install_kind": "auto",
       "name": "osv-scanner",
       "permission_tier": "read-only",
       "profiles": [],
@@ -814,6 +862,7 @@
       "cronjob": "vuln-watch",
       "detect": "always-recommend",
       "install": "brew install trivy",
+      "install_kind": "auto",
       "name": "trivy",
       "permission_tier": "read-only",
       "profiles": [],
@@ -825,6 +874,7 @@
       "category": "security",
       "detect": "repos con Dockerfile + CD",
       "install": "brew install cosign",
+      "install_kind": "auto",
       "name": "cosign",
       "permission_tier": "read-write",
       "phase": 2,
@@ -839,6 +889,7 @@
       "category": "deploy",
       "detect": "repos con migraciones SQL",
       "install": "npm i -g squawk-cli",
+      "install_kind": "auto",
       "name": "squawk",
       "permission_tier": "read-only",
       "profiles": [
@@ -853,6 +904,7 @@
       "category": "deploy",
       "detect": "repos con migraciones SQL",
       "install": "brew install goose",
+      "install_kind": "auto",
       "name": "goose",
       "permission_tier": "read-write",
       "profiles": [
@@ -865,7 +917,8 @@
       "bin": "buf",
       "category": "contracts",
       "detect": "repos con buf.yaml",
-      "install": "buf.build/bufbuild/protovalidate (dep en el repo proto)",
+      "install": "https://buf.build/bufbuild/protovalidate",
+      "install_kind": "manual",
       "name": "protovalidate",
       "permission_tier": "read-only",
       "profiles": [
@@ -873,13 +926,14 @@
         "arquitecto"
       ],
       "provider": "cli",
-      "purpose": "Validación COMO PARTE del contrato proto (una fuente de reglas, interceptores Go/Py/TS). Dart: valida el servidor"
+      "purpose": "Validación COMO PARTE del contrato proto (una fuente de reglas, interceptores Go/Py/TS). Dart: valida el servidor. Es DEPENDENCIA del repo proto, no un CLI que se instale aquí"
     },
     {
       "bin": "sloth",
       "category": "deploy",
       "detect": "prometheus en el stack",
       "install": "brew install slok/tap/sloth",
+      "install_kind": "auto",
       "name": "sloth",
       "permission_tier": "read-only",
       "phase": 2,
@@ -892,7 +946,8 @@
     {
       "category": "deploy",
       "detect": "elegido en entrevista (direct-to-prod)",
-      "install": "self-hosted (helm chart) — no es CLI local",
+      "install": "https://docs.getunleash.io/using-unleash/deploy/getting-started",
+      "install_kind": "manual",
       "name": "unleash",
       "permission_tier": "read-write",
       "phase": 2,
@@ -901,7 +956,7 @@
         "deployer"
       ],
       "provider": "cli",
-      "purpose": "Feature flags OSS (OpenFeature-compatible, SDK Flutter oficial): deploy≠release en direct-to-prod; webhook de flags stale → PR de limpieza"
+      "purpose": "Feature flags OSS (OpenFeature-compatible, SDK Flutter oficial): deploy≠release en direct-to-prod; webhook de flags stale → PR de limpieza. Se despliega self-hosted (helm chart): no hay CLI local que instalar"
     },
     {
       "bin": "lychee",
@@ -909,6 +964,7 @@
       "cronjob": "doc-gardener",
       "detect": "always-recommend",
       "install": "brew install lychee",
+      "install_kind": "auto",
       "name": "lychee",
       "permission_tier": "read-only",
       "profiles": [],
@@ -921,6 +977,7 @@
       "cronjob": "doc-gardener",
       "detect": "always-recommend",
       "install": "brew install d2",
+      "install_kind": "auto",
       "name": "d2",
       "permission_tier": "read-only",
       "profiles": [
@@ -976,6 +1033,25 @@
       ],
       "provider": "mcp",
       "purpose": "GKE nativo de Google (clusters, workloads, logs) — complementa kubernetes-mcp"
+    },
+    {
+      "category": "mcp",
+      "config": {
+        "type": "http",
+        "url": "https://mcp.facebook.com/devtools"
+      },
+      "detect": "APIs de Meta en el stack (Graph API, WhatsApp Cloud API, Instagram, Facebook Login, webhooks de Meta)",
+      "mcp": "meta_developer_tools",
+      "name": "meta-devtools-mcp",
+      "note": "remoto (streamable HTTP) con OAuth de cuenta de developer: cero secretos en config, pero exige `/mcp` → authenticate al arrancar el cliente (no sirve en cron ni headless). Scope Read por default; Manage solo si de verdad se necesita crear/borrar suscripciones de webhooks (único write del server) y sube el tier a read-write. Beta con rollout gradual: puede no estar habilitado en la cuenta, y el set de tools puede cambiar. Los 10 tools traen contenido externo (docs, payloads de webhooks): tratarlo como no confiable, sin accionar automático",
+      "permission_tier": "read-only",
+      "phase": 2,
+      "profiles": [
+        "orquestador",
+        "implementer"
+      ],
+      "provider": "mcp",
+      "purpose": "MCP oficial de Meta (beta): config de apps, estado de App Review, compliance, uso/rate limits de la Graph API, webhooks y búsqueda de docs, sin abrir el dashboard de developers.facebook.com"
     }
   ]
 }

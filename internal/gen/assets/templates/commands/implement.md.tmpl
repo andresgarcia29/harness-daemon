@@ -17,8 +17,14 @@ Implementación de $ARGUMENTS según tasks/<task-id>/plan.md.
    sus criterios de aceptación y el brief (`.cache/briefs/<repo>.md`).
    Con eso el implementer NO explora el repo desde cero — Serena cubre
    el nivel símbolo. Tareas sin dependencia entre sí: EN PARALELO.
-4. Cada implementer termina → marca su bead y pide review. Encola
-   `/review <task-id> <repo>` EN BACKGROUND.
+4. Cada implementer termina → **precheck antes de review**:
+   `scripts/ship.sh --precheck <task-id> <repo>` (los mismos gates
+   mecánicos del ship, sin veredicto ni push, $0 tokens). Verde: marca
+   su bead y encolas `/review <task-id> <repo>` EN BACKGROUND. Rojo:
+   vuelve al implementer con el error completo, y eso NO cuenta como
+   ronda de review porque el reviewer no vio nada, que es justo la ronda
+   que el harness quiere no pagar. Tope: 2 devoluciones por precheck; a
+   la tercera es un gate rojo persistente y escala a humano (Ley 6).
 5. **El review NO es barrera**: una tarea cuyo único prerequisito es
    el COMMIT de otra (dep del DAG) arranca en cuanto ese commit
    existe — no esperes su veredicto. El veredicto solo bloquea el

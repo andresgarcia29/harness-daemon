@@ -13,8 +13,15 @@ make init
 
 Eso instala las herramientas que falten, te pide credenciales si hacen
 falta (interactivo, nada pasa por ningún chat), materializa los
-secretos y corre el doctor. Es idempotente: córrelo las veces que
-quieras. Salud en cualquier momento: `make doctor`.
+secretos, **construye el grafo de código** y corre el doctor. Es
+idempotente: córrelo las veces que quieras. Salud en cualquier momento:
+`make doctor`.
+
+El grafo se construye en el onboarding a propósito: el build inicial
+tarda unos minutos y es de una sola vez, y así la primera tarea ya lo
+encuentra listo en vez de caer a grep masivo en medio del trabajo.
+Después se refresca solo (incremental por HEADs) y puedes forzarlo con
+`make graph`.
 
 ### Secretos ({{SECRETS_SOURCE}})
 
@@ -56,6 +63,14 @@ Si quieres conducir fase por fase, los comandos sueltos siguen ahí:
 `/feature <ticket>` → `/rfc` → `/implement` → `/review` → `/ship` →
 `/archive`. Reglas de entrada de tickets: `docs/harness/intake.md`.
 
+**Por qué no da vueltas** (las tres reglas que recortan iteraciones):
+el plan se piensa en modo `ultrathink` y pasa `make plan-lint TASK=<id>`
+(cero decisiones abiertas, archivos y criterios binarios por tarea); el
+worktree pasa `make precheck TASK=<id> REPO=<repo>` antes de pedir review
+(los gates mecánicos cuestan segundos, una ronda de reviewer cuesta
+minutos); y el reviewer entrega su lista de blocking COMPLETA en la
+primera ronda. Detalle en `docs/harness/pipeline.md`.
+
 **Modelos**: `models.yaml` es la única perilla — aliases `fast|smart|deep`,
 rol→alias, overrides por agente y el proveedor (anthropic/vertex/bedrock/
 kimi/openrouter). Cambias una línea y corres `make models`. Para una sola
@@ -92,3 +107,12 @@ pruebas de aprobación ligadas al commit mediante `evidence.py`.
   update; idempotente, todo por diff).
 - Los documentos `status: DRAFT` requieren ratificación humana antes
   del primer RFC — el doctor te dice cuántos quedan.
+- **Si el HARNESS falla (no tu código)**, los agentes lo verifican y
+  levantan el issue en el repo del plugin: es regla del workspace, no
+  cortesía (un workaround silencioso lo paga el siguiente usuario). El
+  filtro es `scripts/harness-bug.sh` (propiedad del artefacto, drift
+  contra el template, versión al día, repro obligatorio, dedupe, cuota
+  de 3 por día y redacción de secretos) y el criterio, la skill
+  `harness-bug-report`. Es lo único que este harness publica hacia
+  afuera: para apagarlo, `upstream_issues: off` en
+  `harness-answers.yaml`. Lo ya reportado: `make bugs`.

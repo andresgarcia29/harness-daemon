@@ -12,6 +12,13 @@ Antes del primer review de la tarea solicita la transición ejecutable:
 Si policy la rechaza, no falsifiques el estado: corrige la fase precedente o
 reporta el código de error.
 
+0. **Puerta mecánica antes de gastar juicio**: lee
+   `tasks/<task-id>/precheck-<repo>.json`. Si no existe, o su `commit`
+   no es el HEAD del worktree, o `ok` es false, corre
+   `scripts/ship.sh --precheck <task-id> <repo>` y **no lances a nadie
+   hasta que quede verde** (rojo vuelve al implementer con el error
+   completo). Un reviewer que descubre un test roto gastó una ronda de
+   10-20 minutos en algo que un script dice en segundos.
 1. **Dimensiona QA primero** (decide antes de lanzar nada):
    - Repos frontend/mobile, o criterios de cara al usuario → QA es un
      agente (`qa`, ejercita como usuario, Playwright).
@@ -40,8 +47,11 @@ reporta el código de error.
    (el implementer movió HEAD), la mitad obsoleta se repite — nunca
    fusiones veredictos de commits distintos.
 4. **fail (de reviewer o de QA)** → regresa los items `blocking` (con su
-   remediación) al implementer. Loop máx {{LOOP_BUDGET}}: implementer
-   corrige SOLO blocking → **re-review INCREMENTAL**: el reviewer
+   remediación) al implementer, **todos juntos y en una sola pasada**:
+   el reviewer debe entregar su lista COMPLETA en la ronda 1, y los
+   `non_blocking` se convierten en beads de seguimiento, nunca en otra
+   ronda. Loop máx {{LOOP_BUDGET}}: implementer corrige SOLO blocking,
+   re-corre el precheck → **re-review INCREMENTAL**: el reviewer
    re-evalúa `git diff <commit-del-veredicto-anterior>..HEAD` + el
    cierre de cada blocking, no el cambio completo otra vez; el veredicto
    nuevo vuelve a atar al HEAD completo. QA solo se repite si el fix
@@ -56,3 +66,6 @@ reporta el código de error.
 Reglas: tú no editas código ni emites juicio en el veredicto — el merge
 del paso 3 es mecánico (campos verbatim de qa-<repo>.json). Solo
 orquestas reviewer ∥ qa ↔ implementer y cuidas el presupuesto de loop.
+Al cerrar, cuenta cuántas rondas costó (`review_rounds` en state.json) y
+cuántos blocking llegaron marcados `[tardío]`: esa cifra es la que el
+proyecto quiere ver bajar, y es material de `/promote`.

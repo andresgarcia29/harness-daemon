@@ -49,6 +49,8 @@ func ParseAnswersYAML(b []byte) (*Answers, error) {
 				a.Flow = val
 			case "autonomy":
 				a.Autonomy = val
+			case "upstream_issues":
+				a.UpstreamIssues = val
 			case "minion_decompose":
 				a.MinionDecompose = (val == "true")
 			case "loop_budget":

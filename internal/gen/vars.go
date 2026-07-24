@@ -2,6 +2,7 @@ package gen
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ func Vars(a *Answers, inv *Inventory, o Opts) map[string]string {
 		"INSTANCE_REPO":      yamlScalar(a.Instance.Repo),
 		"FLOW":               a.Flow,
 		"AUTONOMY":           a.Autonomy,
+		"UPSTREAM_ISSUES":    defaultStr(a.UpstreamIssues, "auto"),
 		"LOOP_BUDGET":        fmt.Sprint(a.LoopBudget),
 		"MODEL_PROVIDER":     defaultStr(a.Models.Provider, "anthropic"),
 		"MODEL_ARCHITECT":    a.Models.Architect,
@@ -42,7 +44,6 @@ func Vars(a *Answers, inv *Inventory, o Opts) map[string]string {
 		"MEMORY_TOOL":        memoryTool(a),
 		"TICKETS_PROVIDER":   a.Tickets.Provider,
 		"SECRETS_SOURCE":     a.Secrets.Source,
-		"SECRETS_SOURCE_FN":  secretsFn(a.Secrets.Source),
 		"VAULT_ADDR":         defaultStr(a.Secrets.VaultAddr, "https://TODO-tu-vault:8200"),
 		"VAULT_KV_BASE":      defaultStr(a.Secrets.KvBase, slug+"/harness"),
 		"VAULT_KEYS":         keysBlock(a, "vault"),
@@ -100,25 +101,6 @@ func memoryTool(a *Answers) string {
 		return "engram (MCP)"
 	}
 	return "sin memoria episódica"
-}
-
-func secretsFn(source string) string {
-	switch source {
-	case "vault":
-		return "pull_vault"
-	case "gcp-secret-manager":
-		return "pull_gcp_sm"
-	case "aws-secrets-manager":
-		return "pull_aws_sm"
-	case "doppler":
-		return "pull_doppler"
-	case "sops":
-		return "pull_sops"
-	case "1password":
-		return "pull_op"
-	default:
-		return "pull_env"
-	}
 }
 
 // keysBlock — las líneas dump_* de secrets.sh según la fuente. Sin refs
@@ -255,6 +237,14 @@ func secretsRefsYAML(a *Answers) string {
 
 // ensureLines — bootstrap: una línea ensure/require por capacidad CLI elegida,
 // derivada del campo install del catálogo (brew → ensure; lo demás require).
+// ensureLines — una línea `ensure`/`require` por capacidad elegida.
+//
+// La decisión la manda el catálogo (`install_kind`), NO una lectura del texto
+// de `install`. La versión anterior solo reconocía comandos `brew`: npm, pip,
+// go install, uv tool y gcloud components caían a `require`, el bootstrap se
+// declaraba terminado sin instalarlos y el doctor los reportaba en ❌ con la
+// remediación "corre scripts/bootstrap.sh", que ya se había corrido. Bucle sin
+// salida para el usuario (harness-creator#23).
 func ensureLines(a *Answers) string {
 	var out []string
 	for _, sel := range a.Capabilities {
@@ -266,23 +256,53 @@ func ensureLines(a *Answers) string {
 			out = append(out, fmt.Sprintf("require %s 'instálalo a mano'", sel.Bin))
 			continue
 		}
-		brew := ""
-		for _, part := range strings.Split(cap.Install, "|") {
-			p := strings.TrimSpace(part)
-			if strings.HasPrefix(p, "brew ") {
-				brew = p
-			}
-		}
-		if brew != "" {
-			out = append(out, fmt.Sprintf("ensure %s %s", sel.Bin, brew))
+		cmd, kind := installFor(cap)
+		if kind == "auto" {
+			out = append(out, fmt.Sprintf("ensure %s %s", sel.Bin, cmd))
 		} else {
-			out = append(out, fmt.Sprintf("require %s '%s'", sel.Bin, strings.TrimSpace(strings.Split(cap.Install, "|")[0])))
+			out = append(out, fmt.Sprintf("require %s '%s'", sel.Bin, cmd))
+		}
+		// post_install: idempotente y fail-open (ej. graphify registra su skill)
+		if pi := strings.TrimSpace(cap.PostInstall); pi != "" {
+			out = append(out, fmt.Sprintf("command -v %s >/dev/null && { %s || true; }", sel.Bin, pi))
 		}
 	}
 	if len(out) == 0 {
 		return "# (sin capacidades CLI adicionales elegidas)"
 	}
 	return strings.Join(out, "\n")
+}
+
+// installFor — el comando y el kind EFECTIVOS para esta plataforma.
+func installFor(c Capability) (string, string) {
+	cmd := strings.TrimSpace(c.Install)
+	kind := strings.TrimSpace(c.InstallKind)
+	if runtime.GOOS == "linux" && strings.TrimSpace(c.InstallLinux) != "" {
+		cmd = strings.TrimSpace(c.InstallLinux)
+		kind = strings.TrimSpace(c.InstallLinuxKind)
+	}
+	if kind != "auto" && kind != "manual" {
+		kind = inferInstallKind(cmd) // catálogos viejos, sin el campo
+	}
+	return cmd, kind
+}
+
+// inferInstallKind — SOLO fallback para catálogos sin install_kind. La lista
+// es cerrada a propósito: lo que no reconoce se verifica, no se ejecuta.
+func inferInstallKind(cmd string) string {
+	if strings.HasPrefix(cmd, "http://") || strings.HasPrefix(cmd, "https://") {
+		return "manual"
+	}
+	head := cmd
+	if i := strings.IndexByte(cmd, ' '); i > 0 {
+		head = cmd[:i]
+	}
+	switch head {
+	case "brew", "npm", "npx", "pnpm", "yarn", "pip", "pip3", "pipx", "uv",
+		"go", "cargo", "gem", "apt-get", "apt", "dnf", "yum", "winget", "scoop", "gcloud":
+		return "auto"
+	}
+	return "manual"
 }
 
 func repoTable(a *Answers, inv *Inventory) string {
