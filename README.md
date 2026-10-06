@@ -10,6 +10,8 @@ A single Go binary that watches coding agents (Claude Code, Codex, whatever come
 a dashboard you can read at a glance: what's happening, **whether something is waiting on you**, what they decided
 for you, when they stopped themselves, and how much you've spent.
 
+![The dashboard the daemon serves (synthetic demo data)](https://raw.githubusercontent.com/andresgarcia29/harness-ui/main/docs/overview.png)
+
 **Watch the work, not the agent.** A worktree with commits, a gate that exited 3, a task that changed phase: none
 of it cares who wrote it. So the useful layers need no adapters at all:
 
