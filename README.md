@@ -1,6 +1,5 @@
 # harness-daemon
 
-[![ci](https://github.com/andresgarcia29/harness-daemon/actions/workflows/ci.yml/badge.svg)](https://github.com/andresgarcia29/harness-daemon/actions/workflows/ci.yml)
 [![version](https://img.shields.io/github/v/tag/andresgarcia29/harness-daemon?label=version)](https://github.com/andresgarcia29/harness-daemon/tags)
 [![Go](https://img.shields.io/github/go-mod/go-version/andresgarcia29/harness-daemon)](go.mod)
 [![license](https://img.shields.io/github/license/andresgarcia29/harness-daemon)](LICENSE)
