@@ -1,5 +1,38 @@
 # harness-daemon
 
+[![version](https://img.shields.io/github/v/tag/andresgarcia29/harness-daemon?label=version)](https://github.com/andresgarcia29/harness-daemon/tags)
+[![Go](https://img.shields.io/github/go-mod/go-version/andresgarcia29/harness-daemon)](go.mod)
+[![license](https://img.shields.io/github/license/andresgarcia29/harness-daemon)](LICENSE)
+
+**See what your coding agents are doing, live, without reading a console.**
+
+A single Go binary that watches coding agents (Claude Code, Codex, whatever comes next) and turns their work into
+a dashboard you can read at a glance: what's happening, **whether something is waiting on you**, what they decided
+for you, when they stopped themselves, and how much you've spent.
+
+**Watch the work, not the agent.** A worktree with commits, a gate that exited 3, a task that changed phase: none
+of it cares who wrote it. So the useful layers need no adapters at all:
+
+- **Layer 0, universal:** live processes, worktrees, git state, mtimes. Works with any agent, today.
+- **Layer 1, the harness:** phases, gates, decisions, assumptions, stops, read from its `events.jsonl` bus.
+- **Layer 2, per CLI:** tokens, cost, live text. One adapter per CLI, and it **degrades on its own**: if a vendor
+  changes its transcript format you lose tokens, never phases, gates or tasks.
+
+**Under the hood:** collector, store, API and the embedded [harness-ui](https://github.com/andresgarcia29/harness-ui)
+panel in one process · SQLite by default, PostgreSQL optional · remote machines over SSH · typed Go → TypeScript
+contract · the daemon observes and can create or resume work, but never approves or publishes: reaching `main`
+stays behind the harness gates.
+
+```bash
+go build -o bin/harnessd ./cmd/harnessd
+./bin/harnessd ensure     # start one if none is running (idempotent)
+./bin/harnessd status
+```
+
+> 📖 The design notes below are written in Spanish.
+
+---
+
 **Ver lo que hacen tus agentes, en tiempo real, sin leer una consola.**
 
 Un binario que observa el trabajo de agentes de código —Claude Code, Codex, lo
